@@ -141,6 +141,7 @@ function songStarted(msg) {
 	classes=playing.className;
 	//Note that we add the space in front here
 	playing.className=classes+" audioboxDivRowPlaying";
+	document.title = "AudioBox: "+data.title+"/"+data.artist;
 	return false;
 }
 

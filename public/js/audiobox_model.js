@@ -109,7 +109,7 @@ var audiobox_model = function(sqlite3,io) {
     //Once we get told Liquidsoap has started the song, we need to tell the browser that it has started, then adjust the playlist	
 	songStarted = function(theidx, request) {
 		var soi=myio;
- 		var sql="SELECT title, printf('%d:%02d',(duration/60),(duration%60)) AS ftime, duration, plt.id, plt.track_id, rating, position FROM PlaylistTracks AS plt LEFT JOIN library AS lib ON plt.track_id=lib.id WHERE plt.id=?";   	
+ 		var sql="SELECT title, printf('%d:%02d',(duration/60),(duration%60)) AS ftime, duration, plt.id, plt.track_id, rating, position, artist FROM PlaylistTracks AS plt LEFT JOIN library AS lib ON plt.track_id=lib.id WHERE plt.id=?";   	
 		db.get(sql,theidx,function(err, row) {
 			if (row=='undefined') {
 				console.log("In songStarted, but nothing in playlist.");
