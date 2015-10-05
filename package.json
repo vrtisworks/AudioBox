@@ -1,0 +1,27 @@
+{
+  "name": "Audiobox",
+  "version": "0.1.0",
+  "description": "A jukebox like application based on NODE and LIQUIDSOAP",
+  "main": "index.js",
+  "scripts": {
+    "test": "notest.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "AudioBox"
+  },
+  "keywords": [
+    "Jukebox",
+    "Raspberry",
+    "PI",
+    "Liquidsoap"
+  ],
+  "author": "Nick Vrtis - Vrtisworks",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.13.3",
+    "socket.io": "^1.3.7",
+    "sqlite3": "^3.1.0",
+    "telnet-client": "^0.2.0"
+  }
+}

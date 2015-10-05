@@ -1,0 +1,10 @@
+# Ignore all the npm modules
+node_modules/**
+# Ignore the sqlite database
+db/**
+# OS/X 'stuff'
+.DS_Store
+._*
+.fseventsd
+.Spotlight-V100
+

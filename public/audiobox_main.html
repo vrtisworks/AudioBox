@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+	<meta name="description" content="Vrtisworks AudioBox system V0.1.0" />
+    <title>AudioBox Main Screen</title>
+	<script src="./third-party/JQ/jquery-2.1.1.min.js"></script>
+	<script src="./third-party/KS/js/kickstart.js"></script>
+	<script src="/socket.io/socket.io.js"></script>
+	<link rel="stylesheet" href="./third-party/KS/css/kickstart.css" media="all">
+    <link rel="stylesheet" href="./css/audiobox.css" />
+    <script type="text/javascript">
+		var MyBox={};
+		MyBox.Playlist={};			//Define these as empty
+		MyBox.Searchlist={};
+		MyBox.Socket=io();			//And crank up the socket back to the server.
+		MyBox.playingTimer=false;	//We don't have a song currently playing
+    </script>
+</head>
+<body>
+<div id="audiobox_main" class="grid">
+<!-- Audio Out control/monitoring -->
+<div class="col_5 audioboxheader">
+	<ul class="button-bar">
+		<li><a href="" onclick="return showRating();" ><i class="fa fa-backward"></i> </a></li>
+		<li><a href="" onclick="return showRating();" ><i class="fa fa-play"></i> </a></li>
+		<li><a href="" onclick="return showRating();" ><i class="fa fa-forward"></i> </a></li>
+		<li><a href="" onclick="return showRating();" ><i class="fa fa-music"></i> Total <span id="audioboxPLTotal">0:00</span></a></li>
+		<li><a href="" onclick="return showRating();" ><i class="fa fa-volume-down"></i> </a></li>
+		<li><a href="" onclick="return showRating();" ><i class="fa fa-volume-up"></i> </a></li>
+	</ul>
+	<ul class="button-bar" style="padding-left: 30px;">
+		<li><a href="" onclick="return showRating();" id="audioboxratingbutton"><i class="fa fa-star"></i> </a></li>
+		<li><a href="" onclick="return showCrates();" id="audioboxcratesbutton"><i class="fa fa-tags"></i> </a></li>
+	</ul>
+	<div id="audioboxratingpopup" class="hide" style="z-index: 200; position: absolute;">
+		<select id="audioboxrating" onchange="ratingChanged();" onblur="cancelRatingChange();">
+			<option value="0">-</option>
+			<option value="1">*</option>
+			<option value="2">**</option>
+			<option value="3">***</option>
+			<option value="4">****</option>
+			<option value="5">*****</option>
+		</select>
+	</div>
+	<div id="audioboxcratepopup" class="hide" style="z-index: 200; position: absolute;" onblur="cancelCrateChange();">
+		<select id="audioboxcrates" multiple="1" size="4" onblur="cancelCrateChange();">
+				<option value="0">-None-</option>
+		</select>
+		<br>	
+		<!-- <button class="red small pop" onclick="return cancelCrateChange();"><i class="fa fa-undo"></i> </button> -->
+		<button class="green small pop" onclick="return saveCrateChange();"><i class="fa fa-save"></i> Save</button>
+	</div>
+</div>
+<!-- Browser Play control/monitoring -->
+<div class="col_2 audioboxheader">
+	<ul class="button-bar">
+		<li><a href="#" onclick="return playLocal();"><i class="fa fa-play"></i></a></li>
+		<li><a href="#" onclick="return pauseLocal();"><i class="fa fa-pause"></i></a></li>
+	</ul>
+</div>
+<!-- Playlist load/search stuff -->
+<div class="col_5 audioboxheader">
+	<ul class="button-bar">
+		<li><a href="#" onclick="return loadPlaylist();"><i class="fa fa-folder-open"></i> Load Playlist</a></li>
+		<li><a href="#" onclick="return savePlaylist();"><i class="fa fa-save"></i> Save Playlist</a></li>
+		<li><a href="#" onclick="return emptyCurrent();"><i class="fa fa-file-o"></i> Empty Current Playlist</a></li>
+	</ul>
+</div>
+<!-- End of first row -->
+
+<div class="col_5 audioboxheader">
+	<div id="audioboxsongtitle" class="audioboxPlayerSong">No Server Playing</div>
+	<div class="audioboxPlayerTime audioboxRight"><span class="audioboxRight" id="audioboxsongseconds">00:00</span></div>
+	<progress id="audioboxsongprogress" value="0" max="100" class="audioboxProgress"></progress>
+</div>
+<div class="col_2 audioboxheader">
+	<div id="audioboxlocaltitle" class="audioboxPlayerSong">No Browser Song</div>
+	<div class="audioboxPlayerTime"><span id="audioboxlocalseconds" class="audioboxRight">0:00</span></div>
+	<progress id="audioboxlocalprogress" value="0" max="100" class="audioboxProgress"></progress>
+</div>
+<div class="col_5 audioboxheader">
+	<form>
+		<input type="text" name="audioboxsrchWords" id="audioboxsrchWords" value="" size="30" onkeypress="return checkForCR();" placeholder="Search..."/>
+    	<select name="audioboxsrchFor" id="audioboxsrchFor">
+      		<option selected="selected" value="title">Song</option>
+      		<option value="artist">Artist</option>
+      		<option value="album">Album</option>
+    	</select>
+    </form>
+</div>
+</div>
+<div class="clear"> </div>
+<div id="audioboxtables" class="grid">
+	<div class="col_7" id="audioboxLeftSide">
+		<div class="audioboxDivRow">
+			<div class="audioboxSongL tooltip" title="Album: People">This is a pretty long song title to test things with</div>
+			<div class="audioboxArtistL">And this is also a pretty long Artist name because I want to see</div>
+			<div class="audioboxInfoL">
+				<ul class="button-bar audioboxRight">
+					<li><a href="" class="tooltip" title="Listen Local"><i class="fa fa-volume-up"></i> 03:33</a></li>
+					<li><a href="" class="tooltip" title="Remove"><i class="fa fa-trash"></i> </a></li>
+					<li><a href="" class="tooltip" title="Play Next"><i class="fa fa-arrow-circle-up"></i></a></li>
+				</ul>
+			</div>
+		</div>
+		<div class="audioboxDivRowAlt">
+			<div class="audioboxSongL tooltip" title="Album: People">This is a pretty long song title to test things with</div>
+			<div class="audioboxArtistL">And this is also a pretty long Artist name because I want to see</div>
+			<div class="audioboxInfoL">
+			<ul class="button-bar audioboxRight">
+				<li><a href="" class="tooltip" title="Listen Local"><i class="fa fa-volume-up"></i> 03:33</a></li>
+				<li><a href="" class="tooltip" title="Remove"><i class="fa fa-trash"></i> </a></li>
+				<li><a href="" class="tooltip" title="Play Next"><i class="fa fa-arrow-circle-up"></i></a></li>
+			</ul>
+		</div>
+	</div>
+</div>
+<!-- </div> -->
+<div class="col_5" id="audioboxRightSide">
+<!-- this will get replaced - will build a 'default'/empty section so you can drop stuff -->
+<div class="audioboxDivRow">
+	<div class="audioboxSongR tooltip" title="Album: People">This is a pretty long song title to test things with</div>
+	<div class="audioboxArtistR">And this is also a pretty long Artist name because I want to see</div>
+	<div class="audioboxInfoR">
+		<ul class="button-bar audioboxRight">
+			<li><a href="" class="tooltip" title="Listen Local"><i class="fa fa-volume-up"></i> 03:33</a></li>
+			<li><a href="" class="tooltip" title="Remove"><i class="fa fa-trash"></i> </a></li>
+			<li><a href="" class="tooltip" title="Play Next"><i class="fa fa-arrow-circle-up"></i></a></li>
+		</ul>
+	</div>
+</div>
+<div class="audioboxDivRow">
+	<div class="audioboxPLName">This is the long playlist name</div>
+	<div class="audioboxPLInfo">
+		<ul class="button-bar audioboxRight">
+			<li><a href="" class="tooltip" title="Load"><i class="fa fa-download"></i> </a></li>
+			<li><a href="" class="tooltip" title="Songs">15</a></li>
+			<li><a href="" class="tooltip" title="Time">120:1</a></li>
+			<li><a href="" class="tooltip" title="View"><i class="fa fa-folder-open"></i> </a></li>
+		</ul>
+	</div>
+</div>
+</div> 
+<audio class="hide" id="audioboxLocalAudio" ontimeupdate="moveslider(this);"></audio>
+<!-- Load our Scripts  -->
+<script src="./js/audiobox.js"></script>
+</body>
+</html>
