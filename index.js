@@ -19,16 +19,16 @@
 
 //ToDo:
 //* - The whole "which pieces are running, and in what order" needs some thought/work.
-//* - When we load a new playlist, we need to reset cplidx
+//* - The second 'currently playing' track doesn't get highlighted.
+//    I suspect this is because LiquidSoap gets two tracks initially.
+//* - When updating the current playlist, should update cplidx depending where the update is.
 //* - We need to fill cpltracklist at startup (before we start Liquidsoap playing songs)
 //* - Need to add code for stop/start/forward/reverse
 //* - Need to add code for volume controls
 //* - Need to implement 'delete from current playlist'
 //* - Need to implement 'play me next' (do we?)
 //* - Change the 'empty current playlist' to a drop down with infrequent options
-//* - Need to countdown the remaining time in the song progress
 //* - Need to 'fix' the playMe (play local in browser).. doesn't get the right filename
-//* - Format the run time for a playlist list
 //* - Check to see if DB needs to be created, and do so if necessary
 //* - Module to read ID3 information
 
@@ -49,30 +49,36 @@ var telnetconnection = new telnet();
 var telnetparms = {
   host: '192.168.0.112',			//Change to localhost/127.0.0.1 later
   port: 1234,
-  shellPrompt: '/ # ',
+  shellPrompt: 'END',
+  echoLines: 0,
   timeout: 1500,
 };
 //Since Liquidsoap doesn't send anything after we connect,
 // we need to do our 'work' on connect, not wait for 'ready'
-telnetconnection.on("connect", function() {
-	console.log("Connected");
-	//Stopping the dummy save a little cpu utilization
-	telnetconnection.exec("dummy.stop", function(response) {
-		console.log(response);
+function sendTelnet(cmd, callback) {
+	telnetconnection.on("connect", function() {
+		console.log("Connected");
+		telenetconnect=true;
+		telnetconnection.exec(cmd, function(response) {
+			//console.log(cmd+" Response: "+response);
+			callback(response);
+		});
 	});
+	telnetconnection.on("error", function(err) {
+		console.log("Telnet error");
+		callback(err);
+	});
+	telnetconnection.connect(telnetparms);
+}
+sendTelnet("dummy.stop",function(response) {
+	console.log("Telnet response:"+response);
 });
-
-telnetconnection.on("error", function(err) {
-	console.log("Telnet error");
-	console.log(err);
-});
-
-telnetconnection.connect(telnetparms);
 
 var sqlite3 = require('sqlite3').verbose();
 //Load the db model code.
 var audiobox_model = require('./public/js/audiobox_model.js')(sqlite3,io);
 
+//These are the callbacks from the browser for when we get information from Liquidsoap
 var songCallbacks;
 
 //Put all our static assets in public
@@ -118,7 +124,6 @@ io.on('connection', function(socket) {
 	//Make sure we have the special events (probably redundant.. but not too complicated anyway)
 	getSongEvents();
 });
-
 
 //And lets start the music....
 http.listen(3000, function(){

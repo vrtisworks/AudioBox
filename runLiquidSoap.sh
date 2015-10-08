@@ -17,6 +17,8 @@ set("log.stdout", true)
 set("server.telnet", true)
 # Need to use external address to listen on, so we can talk from external
 set("server.telnet.bind_addr","192.168.0.112")
+# Don't time out the telnet server
+set("server.timeout",-1.0)
 
 # This will give liquidsoap something to do while we wait for the telnet commands
 output.dummy(blank())
@@ -36,7 +38,7 @@ v = interactive.float("volume", 1.)
 def track_filename(m) =
   # Grab the current filename when the track changes
   cplidx := m["cplidx"]
-  ignore(http.get("http://localhost:3000/songStarted/#{cplidx}"))
+  ignore(http.get("http://localhost:3000/songStarted/#{!cplidx}"))
   currentFile := m["filename"]
 end
 

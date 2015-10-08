@@ -334,7 +334,8 @@ var audiobox_model = function(sqlite3,io) {
     			histhis.cplid+
     			',plt.track_id, plt.position FROM PlaylistTracks AS plt LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id=?';
     		hisdb.run(sql, theid, function(result) {
-				mythis.getCurrentPlaylist(event);		
+				mythis.getCurrentPlaylist(event);
+				mythis.cplidx=0;			//Reset this back to the first song.
     		});
     	});
 	}

@@ -242,7 +242,7 @@ function gotPlaylists(msg) {
 		}
 		aRow=aRow.replace(/pl0lp/g,playlists[i][0]);
 		aRow=aRow.replace(/pl1lp/g,playlists[i][1]);
-		aRow=aRow.replace(/pl2lp/g,playlists[i][2]);
+		aRow=aRow.replace(/pl2lp/g,formatTimes(playlists[i][2]));
 		theRows+=aRow.replace(/pl3lp/g,playlists[i][3]);
 	}
 	document.getElementById("audioboxRightSide").innerHTML=theRows;
@@ -308,9 +308,10 @@ function gotSonglist(msg) {
 	//      This is necessary because the playMe() is already in single quotes and needs the string in quotes to pass
 	var rowTemplate;
 	rowTemplate=
-		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id=slRls><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;sl4ls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return deleteMe(sl0ls);'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext(sl0ls);'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
+		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;sl4ls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return deleteMe(sl0ls);'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext(sl0ls);'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
 		rowid='p'+songlist[i][5];	//Use position as the ID we will use for this row
+		rowid='p'+songlist[i][0];	//Use playlist id as the ID we will use for this row
 		//Trackid, title, duration (for local play), playlisttracks id
 		//var ttime=songlist[i][4];
 		//ttime=(ttime/60).toFixed(0)+":"+(ttime%60).toFixed(0);
