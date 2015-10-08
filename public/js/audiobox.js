@@ -1,5 +1,8 @@
 $( document ).ready(function() {
 	//Set up all the event callbacks once.
+	MyBox.Socket.on("gotAnError",gotAnError);					//When the server has an error to tell the user.
+	MyBox.Socket.on("getSongEvents",registerSongEvents);		//When we get asked for our events from LiquidSoap
+	registerSongEvents();										//Send the song related events as soon as we can
 	MyBox.Socket.on("gotCurrentSongList",gotSonglist);			//When we get the list of songs in the current playlist
 	MyBox.Socket.on("gotPlaylists",gotPlaylists);				//When we get a list of playlists for the right side
 	MyBox.Socket.on("savingPlaylist",savingPlaylist);			//When we the list of playlists as part of saving a playlist
@@ -7,13 +10,18 @@ $( document ).ready(function() {
 	MyBox.Socket.on("songStarted",songStarted);					//When we are told LiquidSoap just started a song
 	MyBox.Socket.on("songCrates",songCrates);					//When we get the list of crates that the playing song is part of
 	MyBox.Socket.on("gotCratesList",gotCratesList);				//When we get the complete list of crates for the select list
-	MyBox.Socket.on("getSongEvents",registerSongEvents);		//When we get the complete list of crates for the select list
-	registerSongEvents();										//Send the song related events anyway
 	//Ask for the list of crates available
 	MyBox.Socket.emit("getCratesList",'{"event" : "gotCratesList"}');
 	//Get the current playlist
 	MyBox.Socket.emit('getCurrentPlaylist','{"event" : "gotCurrentSongList"}');
 });
+
+//For 'now', we will just alert the user that there was an error...  Not much we can do about it yet.
+function gotAnError(msg) {
+	var data=playlists=JSON.parse(msg);
+	alert(msg);
+}
+
 //In order to not take up a lot of space for the multiple select box of the crates
 // we hide it and only show it when the crates button is pressed.
 //It has a high z-index, so it overlays instead of taking up screen space.
@@ -93,7 +101,7 @@ function ratingChanged() {
 //We are asked/told to register the song events we want when LiquidSoap starts to actually play a song
 function registerSongEvents() {
 	//Register callbacks we want to be used when a song is started (since that is driven by LiquidSoap talking to the server)
-	MyBox.Socket.emit("registerSongEvents",'{"listevent" : "gotCurrentSongList","songevent" : "songStarted", "crateevent" : "songCrates"}');
+	MyBox.Socket.emit("registerSongEvents",'{"listevent" : "gotCurrentSongList","songevent" : "songStarted", "crateevent" : "songCrates","errorevent" : "gotAnError"}');
 
 }
 

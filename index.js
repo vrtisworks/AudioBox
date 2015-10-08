@@ -22,7 +22,6 @@
 //* - The second 'currently playing' track doesn't get highlighted.
 //    I suspect this is because LiquidSoap gets two tracks initially.
 //* - When updating the current playlist, should update cplidx depending where the update is.
-//* - We need to fill cpltracklist at startup (before we start Liquidsoap playing songs)
 //* - Need to add code for stop/start/forward/reverse
 //* - Need to add code for volume controls
 //* - Need to implement 'delete from current playlist'
@@ -45,34 +44,47 @@ var io = require('socket.io')(http);
 
 var telnet = require('telnet-client');
 var telnetconnection = new telnet();
+var telnetconnected=false;
 
 var telnetparms = {
   host: '192.168.0.112',			//Change to localhost/127.0.0.1 later
   port: 1234,
   shellPrompt: 'END',
   echoLines: 0,
-  timeout: 1500,
+  timeout: 1500
 };
-//Since Liquidsoap doesn't send anything after we connect,
-// we need to do our 'work' on connect, not wait for 'ready'
+
+//We will set up the telnet connection early, just to get it done.
+telnetconnection.on("connect", function() {
+	console.log("Connected");
+	telenetconnected=true;
+});
+
+//Trap the error and send it to the browser if we can
+telnetconnection.on("error", function(err) {
+	console.log("Telnet error:");
+	console.log(err);
+	//Send an alert off to the browser if we can
+	if (songCallbacks) {
+		io.emit(songCallbacks.gotAnError,JSON.stringify(err));
+	}
+});
+//Crank up telnet
+telnetconnection.connect(telnetparms);
+
 function sendTelnet(cmd, callback) {
-	telnetconnection.on("connect", function() {
-		console.log("Connected");
-		telenetconnect=true;
+	if (telnetconnected) {
 		telnetconnection.exec(cmd, function(response) {
 			//console.log(cmd+" Response: "+response);
 			callback(response);
 		});
-	});
-	telnetconnection.on("error", function(err) {
-		console.log("Telnet error");
-		callback(err);
-	});
-	telnetconnection.connect(telnetparms);
+	} else {
+		//Send an alert off to the browser if we can
+		if (songCallbacks) {
+			io.emit(songCallbacks.gotAnError,'{"error":"Not connected","cmd":"'+cmd+'"}');
+		}
+	}
 }
-sendTelnet("dummy.stop",function(response) {
-	console.log("Telnet response:"+response);
-});
 
 var sqlite3 = require('sqlite3').verbose();
 //Load the db model code.
@@ -108,6 +120,9 @@ io.on('connection', function(socket) {
     	console.log('Disconnected');
   	});
 	//Here are all the calls we make via the socket
+	socket.on('registerSongEvents',registerSongEvents);
+	//We will need the browser events in order to do much, so lets ask early.
+	getSongEvents();
 	socket.on('getCurrentPlaylist', getCurrentPlaylist);
 	socket.on('getSavedLists', getSavedLists);
 	socket.on('emptyCurrentList', emptyCurrentList);
@@ -116,18 +131,19 @@ io.on('connection', function(socket) {
 	socket.on('getForReview',getForReview);
 	socket.on('doSearch',doSearch);
 	socket.on('updatePlaylist',updatePlaylist);
-	socket.on('registerSongEvents',registerSongEvents);
-	socket.on('getCratesList',getCratesList);
 	socket.on('ratingChanged',ratingChanged);
 	socket.on('cratesChanged',cratesChanged);
 	socket.on('getSongCrates',getSongCrates);
-	//Make sure we have the special events (probably redundant.. but not too complicated anyway)
-	getSongEvents();
 });
 
 //And lets start the music....
 http.listen(3000, function(){
 	console.log('listening on *:3000');
+});
+
+//This is not too important, but it save a few percent CPU on the PI
+sendTelnet("dummy.stop",function(response) {
+	console.log("Dummy.stop response:"+response);
 });
 
 //Gets the crates assigned to the currently playing song

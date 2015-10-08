@@ -14,9 +14,15 @@ var audiobox_model = function(sqlite3,io) {
 		db.get(sql,{},function(err, row) {
 			if (typeof row != 'undefined') {
 				mythis.cplid=row.id;
-				sql='SELECT COUNT(id) AS cplcnt FROM PlaylistTracks WHERE playlist_id=?';
+				//We also need to get the list of tracks in case LiquidSoap is already playing something
+				sql='SELECT id FROM PlaylistTracks WHERE playlist_id=? ORDER BY position';
 				db.all(sql,mythis.cplid, function (err,rows) {
-					mythis.cplcnt=rows[0].cplcnt;
+					mythis.cplcnt=rows.length;
+					var i;
+					mythis.cpltracklist=[];
+					for (i=0; i<mythis.cplcnt; i++) {
+						mythis.cpltracklist.push(rows[i].id);
+					}
 					console.log('Current Playlist ID: '+mythis.cplid+" - "+mythis.cplidx+" - "+mythis.cplcnt);
 				});
 			} else {
