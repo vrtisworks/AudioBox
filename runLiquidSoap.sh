@@ -85,8 +85,15 @@ def get_filename(ignore) =
 end
 # This is the telnet command to output the current playlist id
 def get_playlistid(ignore) =
-#If !cplidx!='*' then source.remaining(localAudio) as the first output line
-!cplidx
+	
+	if !cplidx!='*' then 
+		# NOTE: source.remaining might not be totally accurate, depending on when it is requested.
+		#       If you ask before LiquidSoap has finished decoding the whole file, you get what is done so far,
+		#       not what is actually remaining.. 
+		"#{!cplidx},#{source.remaining(list.nth(!sourceAndoutput,0))}"
+	else
+		"#{!cplidx}"
+	end
 end
 
 # Now we register the telnet commands:

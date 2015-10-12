@@ -35,7 +35,17 @@ var audiobox_model = function(sqlite3,io) {
 	
 	//Get the currentID because we need that all the time anyway
 	getCurrentID();
-		
+	
+	//Set the cplidx and cplid (if possible) to the input cplid 
+	// (used when a browser connects after LiquidSoap is already playing a song)
+	setCurrentSong=function(playingid) {
+		//If we have it in the table, then set it as the playing one (so 'next', etc work)
+		if (mythis.cpltracklist.indexOf(playingid)) {
+			mythis.cplidx=mythis.cpltracklist.indexOf(playingid);
+			mythis.cplid=playingid;
+		}
+		//Otherwise, we just leave what it was.
+	}
 	//Change the rating on the song
 	ratingChanged=function(request) {
 		var sql="UPDATE Library SET rating=? WHERE id=?";
@@ -122,12 +132,33 @@ var audiobox_model = function(sqlite3,io) {
 				return;
 			}
     		console.log("Now Playing: "+row.title);
+    		//See if we are already part way into the song
+    		if (request.remaining>0) {
+    			row.duration=request.remaining;
+    			//Format the time also
+    			var hh=Math.floor(row.duration/3600);		//Hour part
+				var ss=row.duration-hh*3600;
+				var mm=Math.floor(ss/60);
+				ss=ss-mm*60;
+				if (mm<10) {
+					mm='0'+mm;
+				}
+				if (ss<10) {
+					ss='0'+ss;
+				}
+				//return hh only if necessary
+				if (hh>0) {
+					row.ftime=hh+':'+mm+':'+ss;
+				} else {
+				 row.ftime= mm+':'+ss;
+				}    			
+    		}
     		//Tell the browser to start showing that the song is playing.
 			soi.emit(request.songevent,JSON.stringify(row));
 			//Then we need to tell the browser what crates this song is currently in (we don't are about the order - we did that when we gave the list
-			//We don't need to wait for this to return before we can do the update.
+			//We don't need to wait for this to return.
 			mythis.getSongCrates({track_id:row.track_id, crateevent:request.crateevent});
-			//I don't need to worry about exactly when this gets completed
+			//I don't need to worry about exactly when this gets completed either.
     		sql="UPDATE library SET timesplayed=timesplayed+1 WHERE id=?";
     		db.run(sql,[row.track_id],function(result) {
     			console.log("Timesplayed Done: "+this.changes);
@@ -368,6 +399,10 @@ var audiobox_model = function(sqlite3,io) {
 				mythis.cpltracklist=[];
 				for (i=0; i<mythis.cplcnt; i++) {
 					mythis.cpltracklist.push(tracks[i].id);
+					//Reset cplix in case it got shifted around (either by update, or by a new browser connection)
+					if (tracks[i].id==mythis.cplid) {
+						mythis.cplidx=i;
+					}
 				}
 			}
 			var rtn=mythis.tracksobj2array(tracks);

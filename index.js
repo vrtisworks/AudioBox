@@ -23,10 +23,6 @@
 //    I suspect this is because LiquidSoap gets two tracks initially.
 //* - When updating the current playlist, should update cplidx depending where the update is.
 //* - Need to add code for stop/start/forward/reverse
-//    start/stop - toggle class 'fa ??' - initial should be '>'.
-//* - We might get a 'songstarted' if we are just connecting/reconnecting to an already running LiquidSoap
-//    The 'time remaining' might be 'funny'
-//* - Need to add code for volume controls
 //* - Need to add 'mute' for volume control
 //* - Need to implement 'delete from current playlist'
 //* - Need to implement 'play me next' (do we?)
@@ -120,7 +116,9 @@ app.get('/getNextSongFileName',function(req,res) {
 app.get('/songStarted/:cplidx',function(req,res) {
 	//I HOPE this closes the HTTP connection, so I can take my time about the rest.
 	res.sendStatus(200);	
-	audiobox_model.songStarted(req.params.cplidx,songCallbacks);
+	var request=songCallbacks;
+	request.remaining=0;
+	audiobox_model.songStarted(req.params.cplidx,request);
 });
 
 io.on('connection', function(socket) {
@@ -151,7 +149,14 @@ io.on('connection', function(socket) {
 		var lines=response.split('\n');
 		if (lines[0]!='*') {
 			//We currently have a song playing.. things are a little more complicated
-			console.log("Song PLID: "+lines[0]);
+			lines=lines[0].split(",");
+			//First part is the PLID, second part is time remaining (sort of)
+			lines[1]=Math.floor(lines[1]);
+			console.log("Song PLID: "+lines[0]+" : "+lines[1]);
+			var request=songCallbacks;
+			request.remaining=lines[1];
+			audiobox_model.setCurrentSong(lines[0]);
+			audiobox_model.songStarted(lines[0],request);
 		} else {
 			//Nothing playing yet
 			console.log("Nothing playing yet.");

@@ -138,14 +138,13 @@ function songStarted(msg) {
 		}
 	}
 	//Need to start a timer every second to update the progress bar.
-	if (MyBox.playingTimer!==false) {
+	if (MyBox.playingTimer.id!==false) {
 		clearInterval(MyBox.playingTimer.id);
 	}
-	MyBox.playingTimer={
-		"id" : setInterval(movePlayingSlider,1000),
-		"value" : 0,
-		"max" : data.duration
-	}
+	MyBox.playingTimer.id=setInterval(movePlayingSlider,1000),
+	MyBox.playingTimer.value=0;
+	MyBox.playingTimer.max=data.duration;
+	MyBox.playingTimer.rowid="p"+data.id;
 	//Turn off highlight for the previous one (if any)
 	var playing = document.getElementsByClassName("audioboxDivRowPlaying");
 	var classes;
@@ -157,11 +156,16 @@ function songStarted(msg) {
 		playing[i].className = classes.replace(" audioboxDivRowPlaying","");
 	}
 	//And highlight the row currently playing
-	playing=document.getElementById("p"+data.id);
-	classes=playing.className;
-	//Note that we add the space in front here
-	playing.className=classes+" audioboxDivRowPlaying";
+	playing=document.getElementById(MyBox.playingTimer.rowid);
+	//NOTE: There may be a number of reasons that the currently playing song isn't in the playlist
+	if (playing) {
+		classes=playing.className;
+		//Note that we add the space in front here
+		playing.className=classes+" audioboxDivRowPlaying";
+	}
 	document.title = "AudioBox: "+data.title+"/"+data.artist;
+	//Change the play/pause button to a pause now that we are playing.
+	document.getElementById("audioboxplaybutton").className="fa fa-pause";
 	return false;
 }
 
@@ -170,7 +174,7 @@ function movePlayingSlider() {
 	MyBox.playingTimer.value++;
 	if (MyBox.playingTimer.value>MyBox.playingTimer.max) {
 		clearInterval(MyBox.playingTimer.id);
-		MyBox.playingTimer=false;
+		MyBox.playingTimer.id=false;
 		document.getElementById("audioboxPLTotal").innerHTML="00:00";
 	} else {
 		document.getElementById("audioboxsongprogress").value=MyBox.playingTimer.value;
@@ -414,6 +418,15 @@ function gotSonglist(msg) {
 			e.dataTransfer.setData('Text', this.getAttribute("data-dd")); 	// Need to know the source when it is dropped
 		});
 	}
+	//And highlight the row currently playing
+	playing=document.getElementById(MyBox.playingTimer.rowid);
+	//NOTE: There may be a number of reasons that the currently playing song isn't in the playlist
+	if (playing) {
+		classes=playing.className;
+		//Note that we add the space in front here
+		playing.className=classes+" audioboxDivRowPlaying";
+	}
+
 	return false;
 }
 //Load the songs from the playlist into the right side to be reviewed (allow load of the whole playlist, or drag/drop songs)
