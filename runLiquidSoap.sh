@@ -85,6 +85,7 @@ def get_filename(ignore) =
 end
 # This is the telnet command to output the current playlist id
 def get_playlistid(ignore) =
+#If !cplidx!='*' then source.remaining(localAudio) as the first output line
 !cplidx
 end
 

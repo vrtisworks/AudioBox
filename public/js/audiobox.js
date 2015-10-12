@@ -22,6 +22,18 @@ function gotAnError(msg) {
 	alert(msg);
 }
 
+//Adjust the volume up
+function volumeUp() {
+	MyBox.Socket.emit("adjustVolume",'{"direction" : "up"}');
+	return false;
+}
+
+//Adjust the volume down
+function volumeDown() {
+	MyBox.Socket.emit("adjustVolume",'{"direction" : "down"}');
+	return false;
+}
+
 //In order to not take up a lot of space for the multiple select box of the crates
 // we hide it and only show it when the crates button is pressed.
 //It has a high z-index, so it overlays instead of taking up screen space.

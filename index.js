@@ -23,7 +23,11 @@
 //    I suspect this is because LiquidSoap gets two tracks initially.
 //* - When updating the current playlist, should update cplidx depending where the update is.
 //* - Need to add code for stop/start/forward/reverse
+//    start/stop - toggle class 'fa ??' - initial should be '>'.
+//* - We might get a 'songstarted' if we are just connecting/reconnecting to an already running LiquidSoap
+//    The 'time remaining' might be 'funny'
 //* - Need to add code for volume controls
+//* - Need to add 'mute' for volume control
 //* - Need to implement 'delete from current playlist'
 //* - Need to implement 'play me next' (do we?)
 //* - Change the 'empty current playlist' to a drop down with infrequent options
@@ -57,7 +61,12 @@ var telnetparms = {
 //We will set up the telnet connection early, just to get it done.
 telnetconnection.on("connect", function() {
 	console.log("Connected");
-	telenetconnected=true;
+	telnetconnected=true;
+	//I had this 'inline', but we got further into setup before the connect finished... so we do it here.
+	//This is not too important, but it save a few percent CPU on the PI
+	sendTelnet("dummy.stop",function(response) {
+		console.log("Dummy.stop response:"+response);
+	});
 });
 
 //Trap the error and send it to the browser if we can
@@ -75,7 +84,7 @@ telnetconnection.connect(telnetparms);
 function sendTelnet(cmd, callback) {
 	if (telnetconnected) {
 		telnetconnection.exec(cmd, function(response) {
-			//console.log(cmd+" Response: "+response);
+			console.log(cmd+" Response: "+response);
 			callback(response);
 		});
 	} else {
@@ -83,6 +92,7 @@ function sendTelnet(cmd, callback) {
 		if (songCallbacks) {
 			io.emit(songCallbacks.gotAnError,'{"error":"Not connected","cmd":"'+cmd+'"}');
 		}
+		console.log("Not connected: "+cmd);
 	}
 }
 
@@ -134,6 +144,19 @@ io.on('connection', function(socket) {
 	socket.on('ratingChanged',ratingChanged);
 	socket.on('cratesChanged',cratesChanged);
 	socket.on('getSongCrates',getSongCrates);
+	socket.on('adjustVolume',adjustVolume);
+	//Since the browser is connected, let's see if anything is currently playing
+	sendTelnet("audiobox.getid",function(response) {
+		console.log("audiobox.getid: "+response);
+		var lines=response.split('\n');
+		if (lines[0]!='*') {
+			//We currently have a song playing.. things are a little more complicated
+			console.log("Song PLID: "+lines[0]);
+		} else {
+			//Nothing playing yet
+			console.log("Nothing playing yet.");
+		}
+	});
 });
 
 //And lets start the music....
@@ -141,11 +164,26 @@ http.listen(3000, function(){
 	console.log('listening on *:3000');
 });
 
-//This is not too important, but it save a few percent CPU on the PI
-sendTelnet("dummy.stop",function(response) {
-	console.log("Dummy.stop response:"+response);
-});
-
+//Adjust volume (up, down or mute);
+function adjustVolume(msg) {
+	var request=JSON.parse(msg);
+	//Get the current volume
+	sendTelnet("var.get volume",function(response) {
+		var lines=response.split('\n');	
+		var volume=lines[0]*1.0;
+		if (request.direction=="up" && volume<1.0) {
+			volume+=0.10;
+		} else if (request.direction=="down" && volume>0.0) {
+			volume-=0.10;
+		//NOTE:  Mute is different than stop.  When muted, the song will keep playing.
+		} else if (request.direction=="mute") {
+			volume=0.0;
+		}
+		sendTelnet("var.set volume="+volume, function() {
+			return false;
+		});
+	});
+}
 //Gets the crates assigned to the currently playing song
 function getSongCrates(msg) {
 	console.log('getSongCrates: '+msg);
