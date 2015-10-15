@@ -8,6 +8,7 @@ $( document ).ready(function() {
 	MyBox.Socket.on("savingPlaylist",savingPlaylist);			//When we the list of playlists as part of saving a playlist
 	MyBox.Socket.on("gotReviewPlaylist",gotReviewPlaylist);		//When we get a list of songs in a playlist for the right side
 	MyBox.Socket.on("songStarted",songStarted);					//When we are told LiquidSoap just started a song
+	MyBox.Socket.on("songStopped",songStopped);					//When we are told LiquidSoap just started a song
 	MyBox.Socket.on("songCrates",songCrates);					//When we get the list of crates that the playing song is part of
 	MyBox.Socket.on("gotCratesList",gotCratesList);				//When we get the complete list of crates for the select list
 	//Ask for the list of crates available
@@ -21,7 +22,29 @@ function gotAnError(msg) {
 	var data=playlists=JSON.parse(msg);
 	alert(msg);
 }
+//Start/stop the player
+function startStop() {
+	//Get the current setting (can tell from the class)
+	var makeit='start';				//Assume it's paused/stopped and we need to start it up
+	var callback='';				//We really don't need this, because the server already knows
+	if (document.getElementById("audioboxplaybutton").className.indexOf('fa-pause')>=0) {
+		makeit='stop';
+		callback=',"event" : "songStopped"';			//We want a notification back so all browsers get the state change
+	}
+	//We don't need to change the icon if we are going from paused to playing, since the server will send us a 'song started'
+	MyBox.Socket.emit("startStop",'{"makeit" : "'+makeit+'"'+callback+'}');
+	return false;
+}
 
+//When we get the notice from the server that the song is stopped
+function songStopped() {
+	//Stop the progress timer
+	if (MyBox.playingTimer.id!==false) {
+		clearInterval(MyBox.playingTimer.id);
+	}
+	//We need to change the icon to be 'start playing'
+	document.getElementById("audioboxplaybutton").className='fa fa-play';
+}
 //Adjust the volume up
 function volumeUp() {
 	MyBox.Socket.emit("adjustVolume",'{"direction" : "up"}');

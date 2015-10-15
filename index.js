@@ -21,7 +21,6 @@
 //* - The whole "which pieces are running, and in what order" needs some thought/work.
 //* - The second 'currently playing' track doesn't get highlighted.
 //    I suspect this is because LiquidSoap gets two tracks initially.
-//* - When updating the current playlist, should update cplidx depending where the update is.
 //* - Need to add code for stop/start/forward/reverse
 //* - Need to add 'mute' for volume control
 //* - Need to implement 'delete from current playlist'
@@ -34,8 +33,9 @@
 //* - REFACTOR - model needs to some of the 'cpl' stuff in the model
 //             - make sure the request passed to model is consistant
 //             - move the emits out of model and into index.js(?) via a callback in request (playload returned in request.payload)
-//             - do I have any multiple returns from model?
-//             - rename cplidx to cplid (maybe rethink the whole 'cpl' idea - make it an object?)
+//             - do I have any multiple returns from model (yes. at least songStarted sends back the playing information, and then the 
+//               crate information.
+//             - rename 'crate' to ?
 
 var express=require('express');
 var app = express();
@@ -113,12 +113,12 @@ app.get('/getNextSongFileName',function(req,res) {
 });
 
 //I had hoped to do this via osc so I would not have to worry about how long it takes to get something back to LS
-app.get('/songStarted/:cplidx',function(req,res) {
+app.get('/songStarted/:thisPlId',function(req,res) {
 	//I HOPE this closes the HTTP connection, so I can take my time about the rest.
 	res.sendStatus(200);	
 	var request=songCallbacks;
 	request.remaining=0;
-	audiobox_model.songStarted(req.params.cplidx,request);
+	audiobox_model.songStarted(req.params.thisPlId,request);
 });
 
 io.on('connection', function(socket) {
@@ -142,32 +142,82 @@ io.on('connection', function(socket) {
 	socket.on('ratingChanged',ratingChanged);
 	socket.on('cratesChanged',cratesChanged);
 	socket.on('getSongCrates',getSongCrates);
+	socket.on('startStop',startStop);
 	socket.on('adjustVolume',adjustVolume);
-	//Since the browser is connected, let's see if anything is currently playing
-	sendTelnet("audiobox.getid",function(response) {
-		console.log("audiobox.getid: "+response);
-		var lines=response.split('\n');
-		if (lines[0]!='*') {
-			//We currently have a song playing.. things are a little more complicated
-			lines=lines[0].split(",");
-			//First part is the PLID, second part is time remaining (sort of)
-			lines[1]=Math.floor(lines[1]);
-			console.log("Song PLID: "+lines[0]+" : "+lines[1]);
-			var request=songCallbacks;
-			request.remaining=lines[1];
-			audiobox_model.setCurrentSong(lines[0]);
-			audiobox_model.songStarted(lines[0],request);
-		} else {
-			//Nothing playing yet
-			console.log("Nothing playing yet.");
-		}
-	});
 });
 
 //And lets start the music....
 http.listen(3000, function(){
 	console.log('listening on *:3000');
 });
+
+//Restarting in mid song
+function restartedSong(response) {
+	console.log("audiobox.getid: "+response);
+	var lines=response.split('\n');
+	if (lines[0]!='*') {
+		//We currently have a song playing.. things are a little more complicated
+		lines=lines[0].split(",");
+		//First part is the PLID, second part is time remaining (sort of)
+		lines[1]=Math.floor(lines[1]);
+		console.log("Song PLID: "+lines[0]+" : "+lines[1]);
+		var request=songCallbacks;
+		request.remaining=lines[1];
+		audiobox_model.setCurrentSong(lines[0]);
+		audiobox_model.songStarted(lines[0],request);
+	} else {
+		//Nothing playing yet
+		console.log("Nothing playing yet.");
+	}
+}
+
+//Start/stop the player
+function startStop(msg) {
+	var request=JSON.parse(msg);
+	//This can get complicated.. :)
+	//First we need to get the current state of LiquidSoap
+	sendTelnet("localAudio.status",function(response) {
+		var lines=response.split('\n');
+		var cmd='*';
+		if (lines[0]=='on') {
+			if (request.makeit=='stop') {
+				//It is currently playing a song.. so we just need to stop it.
+				cmd='localAudio.stop';
+			} else {
+				//It is currently playing a song and they think it is stopped, so we just need to tell them what is playing
+				cmd='audiobox.getid';
+			}
+		} else if (lines[0]=='off') {
+			if (request.makeit=='start')  {
+				//It is currently stopped.. so we need to start it.. but we also need to go through the start process
+				cmd='audiobox.getid';
+			} else {
+				//It is current stopped, and they want it stopped.. so we just tell them it's stopped.
+				cmd='localAudio.stop';
+			}
+		} else if (request.makeit=='start') {
+			//It has never been started - so we need to hard start it (and this will trigger the song started process)
+			cmd='audiobox.start';
+		} else {
+			//It has never been started.. and they want it stopped... so we don't need to do anything except tell them it is stopped
+			cmd='uptime';
+		}
+		sendTelnet(cmd,function(response) {
+			console.log("startStop: "+cmd);
+			console.log(response);
+			if (cmd=='audiobox.getid') {
+				//We are restarting.. so, first we need to start the localAudio playing
+				sendTelnet("localAudio.start",function(ignored) {
+					//Then send the information off to the browser
+					restartedSong(response);
+				});
+			} else if (request.event) {
+				//They want a response. (should be songStopped)
+				io.emit(request.event,'');
+			}
+		});
+	});
+}
 
 //Adjust volume (up, down or mute);
 function adjustVolume(msg) {
@@ -214,7 +264,10 @@ function ratingChanged(msg) {
 //We need to know a few events to use when Liquid Soap lets us know a song actually started.
 function registerSongEvents(msg) {
     console.log('registerSongEvents: ' + msg);
+    //We might get this a couple of times.. 
+    //but that's ok.. we may just tell a browser that we started the song they already know about
     songCallbacks=JSON.parse(msg);
+	sendTelnet("audiobox.getid",restartedSong);
 }
 //We the browser wants the complete list of crates
 function getCratesList(msg) {
