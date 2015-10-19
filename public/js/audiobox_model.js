@@ -5,7 +5,9 @@ var audiobox_model = function(sqlite3,io) {
 	mythis.audioboxId;		//This is the 'current' playlist id
 	mythis.nextSongIdx=0;	//The to the next song to play in songIdList
 	mythis.songIdListCnt=0;	//The number of songs in the current playlist
-	mythis.songIdList=[0];	//The Playlist Track IDs for the songs to play, in play order
+	mythis.songIdList=[0];	//The PlaylistId_TrackIds for the songs to play, in play order
+							//NOTE: sqlite reuses a id of deleted rows.  So if we delete & add a playlist
+							//      PlaylistId might not be unique if we change/replace the playlist while something is playing
 	var myio=io;		//So I can send stuff back to the browser
 	
 	//Gets the 'current' playlist id (creates it if necessary)
@@ -15,13 +17,13 @@ var audiobox_model = function(sqlite3,io) {
 			if (typeof row != 'undefined') {
 				mythis.audioboxId=row.id;
 				//We also need to get the list of tracks in case LiquidSoap is already playing something
-				sql='SELECT id FROM PlaylistTracks WHERE playlist_id=? ORDER BY position';
+				sql='SELECT id, track_id FROM PlaylistTracks WHERE playlist_id=? ORDER BY position';
 				db.all(sql,mythis.audioboxId, function (err,rows) {
 					mythis.songIdListCnt=rows.length;
 					var i;
 					mythis.songIdList=[];
 					for (i=0; i<mythis.songIdListCnt; i++) {
-						mythis.songIdList.push(rows[i].id);
+						mythis.songIdList.push(mythis.getSongId(rows[i]));
 					}
 					console.log('Current Playlist ID: '+mythis.audioboxId+" - "+mythis.nextSongIdx+" - "+mythis.songIdListCnt);
 				});
@@ -36,16 +38,21 @@ var audiobox_model = function(sqlite3,io) {
 	//Get the audioboxId because we need that all the time anyway
 	getAudioboxId();
 	
-	//Set the nextSongIdx and audioboxId (if possible) to the input audioboxId 
+	//Set the nextSongIdx (if it is still in the list of tracks) to the input audioboxId 
 	// (used when a browser connects after LiquidSoap is already playing a song)
 	setCurrentSong=function(playingid) {
 		//If we have it in the table, then set it as the playing one (so 'next', etc work)
-		if (mythis.songIdList.indexOf(playingid)) {
+		if (mythis.songIdList.indexOf(playingid)>=0) {
 			mythis.nextSongIdx=mythis.songIdList.indexOf(playingid);
-			mythis.audioboxId=playingid;
 		}
 		//Otherwise, we just leave what it was.
 	}
+	
+	//This is a helper routine to return the 'unique' songId - so I only need to change it one place...
+	getSongId= function(arow) {
+		return arow.id+"z"+arow.track_id;
+	}
+	
 	//Change the rating on the song
 	ratingChanged=function(request) {
 		var sql="UPDATE Library SET rating=? WHERE id=?";
@@ -125,8 +132,9 @@ var audiobox_model = function(sqlite3,io) {
     //Once we get told Liquidsoap has started the song, we need to tell the browser that it has started, then adjust the playlist	
 	songStarted = function(theidx, request) {
 		var soi=myio;
+		var lines=theidx.split('z');
  		var sql="SELECT title, printf('%d:%02d',(duration/60),(duration%60)) AS ftime, duration, plt.id, plt.track_id, rating, position, artist FROM PlaylistTracks AS plt LEFT JOIN library AS lib ON plt.track_id=lib.id WHERE plt.id=?";   	
-		db.get(sql,theidx,function(err, row) {
+		db.get(sql,lines[0],function(err, row) {
 			if (row=='undefined') {
 				console.log("In songStarted, but nothing in playlist.");
 				return;
@@ -154,6 +162,7 @@ var audiobox_model = function(sqlite3,io) {
 				}    			
     		}
     		//Tell the browser to start showing that the song is playing.
+    		row.songId=mythis.getSongId(row);
 			soi.emit(request.songevent,JSON.stringify(row));
 			//Then we need to tell the browser what crates this song is currently in (we don't are about the order - we did that when we gave the list
 			//We don't need to wait for this to return.
@@ -213,11 +222,14 @@ var audiobox_model = function(sqlite3,io) {
 						//If we aren't inserting at the end, we need to slide everything 'down'
 						//sql="UPDATE PlaylistTracks SET position=position+1 WHERE playlist_id={$this->currentID} AND position>=$before";
 						sql="UPDATE PlaylistTracks SET position=position+1 WHERE playlist_id=? AND position>=?";
-						db.run(sql,[mythis.audioboxId,before]);
+						db.run(sql,[mythis.audioboxId,before],function(res) {
+							console.log("S - After positions update:"+this.changes);						
+						});
 					}				
 					//sql="INSERT INTO PlaylistTracks (playlist_id, track_id, position) VALUES ({$this->currentID}, $movethis, $before)"												
 					var sql="INSERT INTO PlaylistTracks (playlist_id, track_id, position) VALUES (?, ?, ?)";
 					db.run(sql,[mythis.audioboxId,request.movethis,before],function (res) {
+						console.log("S - After insert item:"+this.lastID);
 						mythis.getCurrentPlaylist(request.event);
 					});							
 				});
@@ -233,27 +245,27 @@ var audiobox_model = function(sqlite3,io) {
 		    			var parm
 						if (request.beforethis=='atEnd') {
 							//If we are adding to the end, then we need to move everything 'up'
-							//sql="UPDATE PlaylistTracks SET position=position-1 WHERE position>$move AND playlist_id={$this->currentID}";
 							sql="UPDATE PlaylistTracks SET position=position-1 WHERE position>? AND playlist_id=?";
 							parm=[move,mythis.audioboxId];
 						} else if (before<move) {
 							//We are moving 'up', so we need to move everything 'down' to make room
-							//sql="UPDATE PlaylistTracks SET position=position+1 WHERE position >=$before AND position<$move AND playlist_id={$this->currentID}";
 							sql="UPDATE PlaylistTracks SET position=position+1 WHERE position >=? AND position<? AND playlist_id=?";
 							parm=[before,move,mythis.audioboxId];
 						} else {
 							//We are moving 'down', so we need to slide everything up to make room
-							//sql="UPDATE PlaylistTracks SET position=position-1 WHERE position >$move AND position<$before AND 	playlist_id={$this->currentID}";
 							sql="UPDATE PlaylistTracks SET position=position-1 WHERE position >? AND position<? AND playlist_id=?";
 							parm=[move,before,mythis.audioboxId];
 							//NOTE: We decrement before AFTER we create the parms, because it will now be what we want to make the new entry
 							before--;
 						}
 						//First the one to adjust the other entries	
-						db.run(sql,parm);
+						db.run(sql,parm,function(res) {
+							console.log("P - After positions update:"+this.changes);						
+						});
 						//And we always need to update the position of the one we are moving
 						var sql="UPDATE PlaylistTracks SET position=? WHERE id=?";
 						db.run(sql,[before,request.movethis],function(res) {
+							console.log("P - After update moved item:"+this.changes);
 							mythis.getCurrentPlaylist(request.event);							
 						});
 					});
@@ -281,6 +293,7 @@ var audiobox_model = function(sqlite3,io) {
 			arow[6]=atrack.name;
 			arow[7]=atrack.track_id;
 			arow[8]=atrack.duration;
+			arow[9]=mythis.getSongId(atrack);
 			rtn.push(arow);
 		}
 		return rtn;
@@ -378,12 +391,14 @@ var audiobox_model = function(sqlite3,io) {
 	getForReview= function(request) {
 		this.getPlaylistTracks(request.plid, request.event);
 	}
-	//NOTE:  We return the PlaylistTracks ID, because that is unique, and from it we can get playlist and track id
+	
+	//Get the list of tracks in the requested playlist Id
 	getPlaylistTracks= function(theplid,ioevent) {		
     	sql="SELECT  plt.id, l.artist, l.album, l.title, printf('%d:%02d',(l.duration/60),(l.duration%60)) AS ftime, plt.position, pl.name, plt.track_id, l.duration FROM library AS l LEFT JOIN PlaylistTracks AS plt ON plt.track_id=l.id LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id=? ORDER BY plt.position, plt.id";
     	var soi=myio;
     	var i;
-    	var oldcplidx;
+    	var oldPlId;
+    	var thisPlId;
 		db.all(sql,[theplid],function (err, tracks) {
 			//It is an 'error' if anything other than the current playlist is empty
 	 		if (tracks.length==0 && theplid!=mythis.audioboxId) {
@@ -395,25 +410,30 @@ var audiobox_model = function(sqlite3,io) {
 				//If this is the 'current' playlist, we want to update the information about the tracks in it.
 				mythis.songIdListCnt=tracks.length;
 				var oldPlId=mythis.songIdList[mythis.nextSongIdx];			//Get the 'old' current playlist id
-				//We want to grab a copy of the current list of PlaylistTrack ID for when we are asked for a song in case position isn't incremented by 1
-				mythis.songIdList=[];
+				mythis.songIdList=[];				//Then empty it out
+				mythis.nextSongIdx=0;				//In case there is nothing in the list
 				for (i=0; i<mythis.songIdListCnt; i++) {
-					mythis.songIdList.push(tracks[i].id);
+					thisPlId=mythis.getSongId(tracks[i]);
+					mythis.songIdList.push(thisPlId);
 					//Reset nextSongIdx in case it got shifted around (either by update, or by a new browser connection)
-					if (tracks[i].id==oldPlId) {
+					if (thisPlId==oldPlId) {
 						mythis.nextSongIdx=i;
-						console.log("Why  here? nextSongIdx:"+mythis.nextSongIdx+" oldPlId: "+oldPlId+" tracks: "+tracks[i].id);
 					}
 				}
+				console.log("nextSongIdx: "+mythis.nextSongIdx+" oldPlId: "+oldPlId+" tracks: "+mythis.songIdListCnt);
+				console.log(mythis.songIdList);
 			}
 			var rtn=mythis.tracksobj2array(tracks);
 			soi.emit(ioevent,JSON.stringify(rtn));
 		});
 	}
+	
 	//This gets all the songs in the 'current' playlist (useful after a reposition, delete, or drop)
 	getCurrentPlaylist = function(ioevent) {
 		return getPlaylistTracks(mythis.audioboxId,ioevent);
     }
+    
+    //Get the lists of 'visiable' playlists
     getSavedLists = function(ioevent) {
 		sql='SELECT  pl.name, count(l.id) AS nbr_tracks, sum(l.duration) AS run_time, pl.id FROM library AS l LEFT JOIN PlaylistTracks AS plt ON plt.track_id=l.id LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE hidden!=2 GROUP BY name ORDER BY name';
     	var soi=myio;
@@ -453,13 +473,17 @@ var audiobox_model = function(sqlite3,io) {
     }
     
     //Liquidsoap will call this to get the next song to play.
-    getNextSongFileName=function(express_res,request) {
-    	var thisPlId=mythis.songIdList[mythis.nextSongIdx];
+    getNextSongFileName=function(express_res) {
+    	var thisPlId=mythis.songIdList[mythis.nextSongIdx]
+    	var sqlid=thisPlId.split("z");		//We are interested in the PlaylistTracksId part for the sql
+    	sqlid=sqlid[0];
+		console.log('getNextSongFileName: '+thisPlId+" : "+mythis.songIdListCnt+" : "+mythis.nextSongIdx);
     	var sql="SELECT tl.location FROM PlaylistTracks AS plt LEFT JOIN library AS lib ON lib.id=plt.track_id LEFT JOIN track_locations AS tl ON lib.location=tl.id WHERE plt.id=?";
-    	db.get(sql,thisPlId,function (err,row) {
+    	db.get(sql,sqlid,function (err,row) {
     		var filename=row.location.replace("D:/RealMusic/","/mnt/remotemusic/");
-    		express_res.send("annotate:thisPlId="+thisPlId+":"+filename);
-			console.log('getNextSongFileName: '+thisPlId+" : "+mythis.songIdListCnt+" : "+filename);
+    		express_res.send('annotate:theplid="'+thisPlId+'":'+filename);
+    		console.log('annotate:theplid="'+thisPlId+'":'+filename);
+			//console.log('getNextSongFileName: '+thisPlId+" : "+mythis.songIdListCnt+" : "+filename);
     	});
     	//Bump this index AFTER we pass it off to the query
     	mythis.nextSongIdx++;				//Bump the 'current position' index

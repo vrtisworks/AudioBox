@@ -167,7 +167,7 @@ function songStarted(msg) {
 	MyBox.playingTimer.id=setInterval(movePlayingSlider,1000),
 	MyBox.playingTimer.value=0;
 	MyBox.playingTimer.max=data.duration;
-	MyBox.playingTimer.rowid="p"+data.id;
+	MyBox.playingTimer.rowid="p"+data.songId;
 	//Turn off highlight for the previous one (if any)
 	var playing = document.getElementsByClassName("audioboxDivRowPlaying");
 	var classes;
@@ -355,13 +355,10 @@ function gotSonglist(msg) {
 	//      This is necessary because the playMe() is already in single quotes and needs the string in quotes to pass
 	var rowTemplate;
 	rowTemplate=
-		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;sl4ls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return deleteMe(sl0ls);'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext(sl0ls);'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
+		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;sl4ls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return deleteMe('psl0ls');'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext('psl0ls');'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
-		rowid='p'+songlist[i][5];	//Use position as the ID we will use for this row
+		//rowid='p'+songlist[i][9];	//Use songId as the ID we will use for this row
 		rowid='p'+songlist[i][0];	//Use playlist id as the ID we will use for this row
-		//Trackid, title, duration (for local play), playlisttracks id
-		//var ttime=songlist[i][4];
-		//ttime=(ttime/60).toFixed(0)+":"+(ttime%60).toFixed(0);
 		MyBox.Playlist[rowid]=[songlist[i][7],songlist[i][3],songlist[i][8],songlist[i][0]];
 		if ((i%2)==0) {
 			aRow=rowTemplate;
@@ -369,7 +366,7 @@ function gotSonglist(msg) {
 			aRow=rowTemplate.replace(/audioboxDivRow/,"audioboxDivRowAlt");
 		}
 		aRow=aRow.replace(/slRls/g,'"'+rowid+'"');		//We put the ID on the row - the row will be the drop target - the name will be the drop source
-		aRow=aRow.replace(/sl0ls/g,songlist[i][0]);	//The playlisttracks id
+		aRow=aRow.replace(/sl0ls/g,songlist[i][9]);	//The song id
 		aRow=aRow.replace(/sl1ls/g,songlist[i][1]);	//Artist
 		aRow=aRow.replace(/sl2ls/g,songlist[i][2]);	//Album
 		aRow=aRow.replace(/sl3ls/g,songlist[i][3]);	//Song Title
@@ -552,7 +549,9 @@ function pauseLocal() {
 function emptyCurrent() {
 	MyBox.Socket.emit('emptyCurrentList','{"event" : "gotCurrentSongList"}');
     return false;
-}//Delete the song from the list
+}
+
+//Delete the song from the list
 function deleteMe(objidx) {
 	//The easy way to do this is just tell the server and get a new list
 	alert("Need to implement deleteMe");

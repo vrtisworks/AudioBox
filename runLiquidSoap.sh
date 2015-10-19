@@ -29,7 +29,7 @@ sourceAndoutput = ref []
 # We want to capture the filename when we start playing a song.
 currentFile=ref ""
 # Along with the current playlist id
-thisPlId=ref "*"
+theplid=ref "*"
 
 # So we can change the volume
 v = interactive.float("volume", 1.0)
@@ -37,8 +37,8 @@ v = interactive.float("volume", 1.0)
 # This runs as part of on_track so we can tell the browser 'exactly' when the track starts
 def track_filename(m) =
   # Grab the current filename when the track changes
-  thisPlId := m["thisPlId"]
-  ignore(http.get("http://localhost:3000/songStarted/#{!thisPlId}"))
+  theplid := m["theplid"]
+  ignore(http.get("http://localhost:3000/songStarted/#{!theplid}"))
   currentFile := m["filename"]
 end
 
@@ -47,6 +47,7 @@ def get_request() =
   # Get the URI
   allhttp = http.get("http://localhost:3000/getNextSongFileName")
   uri = snd(allhttp)
+  log(uri)
   # Create a request
   request.create(uri)
 end
@@ -74,7 +75,7 @@ def destroy_playlist(ignore) =
   # The list is now empty
   sourceAndoutput := []
   # Set the id to * because we are not playing anything
-  thisPlId := "*"
+  theplid := "*"
   # And return
   "Gone!"
 end
@@ -86,13 +87,13 @@ end
 # This is the telnet command to output the current playlist id
 def get_playlistId(ignore) =
 	
-	if !thisPlId!='*' then 
+	if !theplid!='*' then 
 		# NOTE: source.remaining might not be totally accurate, depending on when it is requested.
 		#       If you ask before LiquidSoap has finished decoding the whole file, you get what is done so far,
 		#       not what is actually remaining.. 
-		"#{!thisPlId},#{source.remaining(list.nth(!sourceAndoutput,0))}"
+		"#{!theplid},#{source.remaining(list.nth(!sourceAndoutput,0))}"
 	else
-		"#{!thisPlId}"
+		"#{!theplid}"
 	end
 end
 

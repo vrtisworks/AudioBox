@@ -18,13 +18,15 @@
 // 3) Wait for browser to connect.
 
 //ToDo:
+//* - There is a bug/problem when moving stuff around.
+//    LiquidSoap may (or may not) have requested a song to work on in addition to the one currently playing.
+//    (it needs some time to decode, etc.. and at startup, it always grabs 2).
+//    So, I think we need to track what we have handed to LiquidSoap, in addition to what is currently playing(?)
 //* - The whole "which pieces are running, and in what order" needs some thought/work.
-//* - The second 'currently playing' track doesn't get highlighted.
-//    I suspect this is because LiquidSoap gets two tracks initially.
 //* - Need to add code for stop/start/forward/reverse
 //* - Need to add 'mute' for volume control
 //* - Need to implement 'delete from current playlist'
-//* - Need to implement 'play me next' (do we?)
+//* - Need to implement 'play me next'
 //* - Change the 'empty current playlist' to a drop down with infrequent options
 //* - Need to 'fix' the playMe (play local in browser).. doesn't get the right filename
 //* - Check to see if DB needs to be created, and do so if necessary
@@ -109,6 +111,7 @@ app.get('/', function(req, res){
 
 //From Liquidsoap when it wants the next file to play
 app.get('/getNextSongFileName',function(req,res) {
+	console.log("GET: /getNextSongFileName");
 	audiobox_model.getNextSongFileName(res);
 });
 
@@ -174,6 +177,7 @@ function restartedSong(response) {
 //Start/stop the player
 function startStop(msg) {
 	var request=JSON.parse(msg);
+	console.log("startStop: "+msg);
 	//This can get complicated.. :)
 	//First we need to get the current state of LiquidSoap
 	sendTelnet("localAudio.status",function(response) {
