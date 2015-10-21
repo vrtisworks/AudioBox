@@ -26,20 +26,19 @@ output.dummy(blank())
 # First, we create a list referencing the the playlist and the output:
 sourceAndoutput = ref []
 
-# We want to capture the filename when we start playing a song.
-currentFile=ref ""
-# Along with the current playlist id
-theplid=ref "*"
+# The currently playlist id
+playingplid=ref "*"
+# The most recently requested file (LiquidSoap requests the 'next' file before the current one ends)
+requestedplid=ref "*"
 
 # So we can change the volume
 v = interactive.float("volume", 1.0)
 
 # This runs as part of on_track so we can tell the browser 'exactly' when the track starts
-def track_filename(m) =
+def track_playingid(m) =
   # Grab the current filename when the track changes
-  theplid := m["theplid"]
-  ignore(http.get("http://localhost:3000/songStarted/#{!theplid}"))
-  currentFile := m["filename"]
+  playingplid := m["theplid"]
+  ignore(http.get("http://localhost:3000/songStarted/#{!playingplid}"))
 end
 
 # Our custom request function
@@ -47,7 +46,10 @@ def get_request() =
   # Get the URI
   allhttp = http.get("http://localhost:3000/getNextSongFileName")
   uri = snd(allhttp)
-  log(uri)
+  #We want to extract 'theplid' part that was just supplied
+  stuff=string.split(separator=":",uri)
+  stuff=string.split(separator="=",list.nth(stuff,1))
+  requestedplid := list.nth(stuff,1)
   # Create a request
   request.create(uri)
 end
@@ -56,7 +58,7 @@ end
 def create_playlist(ignore) =
   # The playlist source 
   s = request.dynamic(id="thelist",get_request)
-  s = on_track(id="thelist",track_filename,s)
+  s = on_track(id="thelist",track_playingid,s)
   s = amplify(v, s)
 
   #The output device might have to change depending on your configuration
@@ -75,25 +77,21 @@ def destroy_playlist(ignore) =
   # The list is now empty
   sourceAndoutput := []
   # Set the id to * because we are not playing anything
-  theplid := "*"
+  playingplid := "*"
+  requestedplid := "*"
   # And return
   "Gone!"
 end
 
-# This is the telnet command to output the current filename
-def get_filename(ignore) =
-!currentFile
-end
 # This is the telnet command to output the current playlist id
 def get_playlistId(ignore) =
-	
-	if !theplid!='*' then 
+	if !playingplid!='*' then 
 		# NOTE: source.remaining might not be totally accurate, depending on when it is requested.
 		#       If you ask before LiquidSoap has finished decoding the whole file, you get what is done so far,
 		#       not what is actually remaining.. 
-		"#{!theplid},#{source.remaining(list.nth(!sourceAndoutput,0))}"
+		"#{!playingplid},#{source.remaining(list.nth(!sourceAndoutput,0))},#{!requestedplid}"
 	else
-		"#{!theplid}"
+		"#{!playingplid},0,#{!requestedplid}"
 	end
 end
 
@@ -108,11 +106,6 @@ server.register(namespace="audiobox",
                 usage="stop ",
                 "stop",
                 destroy_playlist)
-server.register(namespace="audiobox",
-                description="Get the current filename.",
-                usage="filename ",
-                "filename",
-                get_filename)
 server.register(namespace="audiobox",
                 description="Get the current playlist id.",
                 usage="getid ",

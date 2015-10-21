@@ -1,8 +1,8 @@
 $( document ).ready(function() {
 	//Set up all the event callbacks once.
 	MyBox.Socket.on("gotAnError",gotAnError);					//When the server has an error to tell the user.
-	MyBox.Socket.on("getSongEvents",registerSongEvents);		//When we get asked for our events from LiquidSoap
-	registerSongEvents();										//Send the song related events as soon as we can
+	//MyBox.Socket.on("getSongEvents",registerSongEvents);		//When we get asked for our events from LiquidSoap
+	//registerSongEvents();										//Send the song related events as soon as we can
 	MyBox.Socket.on("gotCurrentSongList",gotSonglist);			//When we get the list of songs in the current playlist
 	MyBox.Socket.on("gotPlaylists",gotPlaylists);				//When we get a list of playlists for the right side
 	MyBox.Socket.on("savingPlaylist",savingPlaylist);			//When we the list of playlists as part of saving a playlist
@@ -134,11 +134,11 @@ function ratingChanged() {
 	ratings.className="hide";
 }
 //We are asked/told to register the song events we want when LiquidSoap starts to actually play a song
-function registerSongEvents() {
-	//Register callbacks we want to be used when a song is started (since that is driven by LiquidSoap talking to the server)
-	MyBox.Socket.emit("registerSongEvents",'{"listevent" : "gotCurrentSongList","songevent" : "songStarted", "crateevent" : "songCrates","errorevent" : "gotAnError"}');
-
-}
+//function registerSongEvents() {
+//	//Register callbacks we want to be used when a song is started (since that is driven by LiquidSoap talking to the server)
+//	MyBox.Socket.emit("registerSongEvents",'{"listevent" : "gotCurrentSongList","songevent" : "songStarted", "crateevent" : "songCrates","errorevent" : "gotAnError"}');
+//
+//}
 
 //We get this when the server hears that LiquidSoap as actually started playing a song
 function songStarted(msg) {
