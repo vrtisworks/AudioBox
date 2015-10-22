@@ -37,7 +37,8 @@ var audiobox_model = function(sqlite3,io) {
 			//We also need to get the list of tracks in case LiquidSoap is already playing something
 			sql='SELECT id, track_id FROM PlaylistTracks WHERE playlist_id=? ORDER BY position';
 			db.all(sql,mythis.audioboxId, function(err,rows) {
-				mythis.putSongIds(rows);
+				mythis.saveSongIds(rows);			//Save all the Ids
+				mythis.setNextSongIdx("*");			//Set to beginning of list
 				callback();
 			});
 		});
@@ -46,7 +47,7 @@ var audiobox_model = function(sqlite3,io) {
 	// 3) - Coming from replacing playlist - rebuild it and set next=0
 	// 3) - Coming from updating a playlist
 	//Store the songIds into the songIdList array
-	putSongIds=function(rows) {
+	saveSongIds=function(rows) {
 		var i;
 		mythis.songIdListCnt=rows.length;
 		mythis.songIdList=[];
@@ -69,7 +70,7 @@ var audiobox_model = function(sqlite3,io) {
 			//We found it.. so 'next' is really that one +1
 			mythis.nextSongIdx=ridx+1;
 			//Reset back to start if we sent it the last one
-			if (mythis.nextSongIdx>=mythis.SongIdListCnt) {
+			if (mythis.nextSongIdx>=mythis.songIdListCnt) {
 				mythis.nextSongIdx=0;
 			}
 		}
@@ -453,12 +454,14 @@ var audiobox_model = function(sqlite3,io) {
 			if (theplid==mythis.audioboxId && request.type!="simple") {
 				//If this is the 'AUDIOBOX' playlist, we want to update the information about the tracks in it.
 				var findthis="*";					//For 'empty' and 'replace', we want to set it back to the beginning of the list
-				if (request.type=='update') {
-					var i=mythis.nextSongIdx--;			//The last song we sent to LiquidSoap is the 'next' minus 1
-					if (i<0) {i=mythis.IdList.length};	//Might need to wrap around
+				if (request.type=='update' && mythis.songIdListCnt>0) {
+					var i=mythis.nextSongIdx-1;			//The last song we sent to LiquidSoap is the 'next' minus 1
+					if (i<0) {i=mythis.songIdListCnt-1};	//Might need to wrap around
 					findthis=mythis.songIdList[i];		//This is the one that we want to find to make the one after it 'next'
+					console.log("findthis: "+findthis+" nextSongIdx: "+mythis.nextSongIdx+" i: "+i);
+					console.log(mythis.songIdList);
 				}	
-				mythis.putSongIds(tracks);				//Fill the list of all the Ids in the playlist
+				mythis.saveSongIds(tracks);				//Fill the list of all the Ids in the playlist
 				mythis.setNextSongIdx(findthis);
 				console.log("nextSongIdx: "+mythis.nextSongIdx+" oldPlId: "+findthis+" #tracks: "+mythis.songIdListCnt);
 				console.log(mythis.songIdList);
@@ -516,9 +519,9 @@ var audiobox_model = function(sqlite3,io) {
     //Liquidsoap will call this to get the next song to play.
     getNextSongFileName=function(express_res) {
     	var thisPlId=mythis.songIdList[mythis.nextSongIdx]
+		console.log('getNextSongFileName: '+thisPlId+" : "+mythis.songIdListCnt+" : "+mythis.nextSongIdx);
     	var sqlid=thisPlId.split("z");		//We are interested in the PlaylistTracksId part for the sql
     	sqlid=sqlid[0];
-		console.log('getNextSongFileName: '+thisPlId+" : "+mythis.songIdListCnt+" : "+mythis.nextSongIdx);
     	var sql="SELECT tl.location FROM PlaylistTracks AS plt LEFT JOIN library AS lib ON lib.id=plt.track_id LEFT JOIN track_locations AS tl ON lib.location=tl.id WHERE plt.id=?";
     	db.get(sql,sqlid,function (err,row) {
     		var filename=row.location.replace("D:/RealMusic/","/mnt/remotemusic/");
