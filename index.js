@@ -18,7 +18,7 @@
 // 3) Wait for browser to connect.
 
 //ToDo:
-//* - There is a bug/problem when moving stuff around.
+//* - BUG - There is a bug/problem when moving stuff around.
 //    LiquidSoap may (or may not) have requested a song to work on in addition to the one currently playing.
 //    (it needs some time to decode, etc.. and at startup, it always grabs 2).
 //    So, I think we need to track what we have handed to LiquidSoap, in addition to what is currently playing(?)
@@ -153,6 +153,7 @@ io.on('connection', function(socket) {
 	socket.on('getSongCrates',getSongCrates);
 	socket.on('startStop',startStop);
 	socket.on('adjustVolume',adjustVolume);
+	socket.on('doSkip',doSkip);
 	//Check to see if anything is currently playing
 	var songPlaying=audiobox_model.getSongPlaying();
 	if (songPlaying[0]!='*') {
@@ -205,6 +206,41 @@ audiobox_model.modelInit(function() {
 		}
 	});
 });
+
+//Skip forward or backward
+function doSkip(msg) {
+	//We don't really need to return anything to the browser.	
+	var request=JSON.parse(msg);
+	console.log("doSkip: "+msg);
+	var playing=audiobox_model.getSongPlaying();
+	//In any case, we need to tell the model to move it's pointer
+	audiobox_model.skipSong(request.direction);
+	if (playing[0]=='*') {
+		//If LiquidSoap isn't running, then we are done.
+		return;
+	}
+	//Regrdless of which way we skip - we tell LiquidSoap to SKIP the rest of the current track
+	sendTelnet("localAudio.skip", function(response) {
+		console.log("Skip: "+response);
+		if (playing[0]=='p') {
+			//For some reason, if LiquidSoap is 'stopped', it needs TWO starts to actually start playing
+			//Since we are paused.. we will give one here.. then the second one when the browser tells us to start for real.
+			sendTelnet("localAudio.start", function(ignore) {
+			});
+		} else {
+			//Someitmes LiquidSoap doesn't seem to want to continue playing after a skip.. so we need to check
+			sendTelnet("localAudio.status", function(response) {
+				console.log("Status check: "+response);
+				var lines=response.split("\n");
+				if (lines[0]=="off") {
+					//Dang. it didn't keep playing.. kick it
+					sendTelnet("localAudio.start",function(ignore) {
+					});
+				}
+			});
+		}
+	});
+}
 
 //Start/stop the player
 function startStop(msg) {

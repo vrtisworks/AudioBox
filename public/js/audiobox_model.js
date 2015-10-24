@@ -44,8 +44,20 @@ var audiobox_model = function(sqlite3,io) {
 		});
 	}
 	
-	// 3) - Coming from replacing playlist - rebuild it and set next=0
-	// 3) - Coming from updating a playlist
+	//Skip - we need to '+' or '-' the nextSongIdx
+	skipSong=function(direction) {
+		if (mythis.songIdListCnt<2 || direction=='+') {
+			//Forward/backward doesn't make any difference if we only have 0 or 1 entries
+			//And forward doesn't require any changes from us.  'next' is already set.
+			return;
+		}
+		//We subtract 2 because it is 'next' song.. if we did 1, then we would be back to the currently playing song
+		mythis.nextSongIdx=mythis.nextSondIdx-2;
+		if (mythis.nextSongIdx<0) {
+			mythis.nextSongIdx=mythis.songIdListCnt-mythis.nextSongIdx;
+		}
+	}
+	
 	//Store the songIds into the songIdList array
 	saveSongIds=function(rows) {
 		var i;

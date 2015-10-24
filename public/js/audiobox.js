@@ -133,20 +133,12 @@ function ratingChanged() {
 	var ratings=document.getElementById("audioboxratingpopup");
 	ratings.className="hide";
 }
-//We are asked/told to register the song events we want when LiquidSoap starts to actually play a song
-//function registerSongEvents() {
-//	//Register callbacks we want to be used when a song is started (since that is driven by LiquidSoap talking to the server)
-//	MyBox.Socket.emit("registerSongEvents",'{"listevent" : "gotCurrentSongList","songevent" : "songStarted", "crateevent" : "songCrates","errorevent" : "gotAnError"}');
-//
-//}
 
 //We get this when the server hears that LiquidSoap as actually started playing a song
 function songStarted(msg) {
 	var data=playlists=JSON.parse(msg);
 	document.getElementById("audioboxsongtitle").innerHTML=data.title;
 	document.getElementById("audioboxsongseconds").innerHTML=data.ftime;
-	document.getElementById("audioboxsongprogress").value=0;
-	document.getElementById("audioboxsongprogress").max=data.duration;
 	var options=document.getElementById("audioboxrating").options
 	options[0].value=data.track_id;				//We save the library id of the track in the options[0] value,
 												// since the selectedIndex will be the rating value anyway.
@@ -160,14 +152,23 @@ function songStarted(msg) {
 			options[i].selected=false;
 		}
 	}
-	//Need to start a timer every second to update the progress bar.
-	if (MyBox.playingTimer.id!==false) {
-		clearInterval(MyBox.playingTimer.id);
+	if (MyBox.playingTimer.rowid=="p"+data.songId) {
+		//The song hasn't changed.. just the times - we only need to set a new 'value'
+		document.getElementById("audioboxsongprogress").value=MyBox.playingTimer.max-data.duration;
+		MyBox.playingTimer.value=MyBox.playingTimer.max-data.duration;
+	} else {
+		//New song.. all new information
+		//Stop the current timer if there is one running
+		if (MyBox.playingTimer.id!==false) {
+			clearInterval(MyBox.playingTimer.id);
+		}
+		document.getElementById("audioboxsongprogress").value=0;
+		document.getElementById("audioboxsongprogress").max=data.duration;
+		MyBox.playingTimer.value=0;
+		MyBox.playingTimer.max=data.duration;
+		MyBox.playingTimer.rowid="p"+data.songId;
+		MyBox.playingTimer.id=setInterval(movePlayingSlider,1000);
 	}
-	MyBox.playingTimer.id=setInterval(movePlayingSlider,1000),
-	MyBox.playingTimer.value=0;
-	MyBox.playingTimer.max=data.duration;
-	MyBox.playingTimer.rowid="p"+data.songId;
 	//Turn off highlight for the previous one (if any)
 	var playing = document.getElementsByClassName("audioboxDivRowPlaying");
 	var classes;
@@ -189,6 +190,18 @@ function songStarted(msg) {
 	document.title = "AudioBox: "+data.title+"/"+data.artist;
 	//Change the play/pause button to a pause now that we are playing.
 	document.getElementById("audioboxplaybutton").className="fa fa-pause";
+	return false;
+}
+
+//Start playing at the song previous to the currently playing song
+function skipBackward() {
+	MyBox.Socket.emit('doSkip','{"direction" : "-"}');
+	return false;
+}
+
+//Start playing at the song next in the playlist
+function skipForward() {
+	MyBox.Socket.emit('doSkip','{"direction" : "+"}');
 	return false;
 }
 

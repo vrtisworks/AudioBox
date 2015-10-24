@@ -28,9 +28,9 @@
 <!-- Audio Out control/monitoring -->
 <div class="col_5 audioboxheader">
 	<ul class="button-bar">
-		<li><a href="" onclick="return showRating();" ><i class="fa fa-backward"></i> </a></li>
+		<li><a href="" onclick="return skipBackward();" ><i class="fa fa-backward"></i> </a></li>
 		<li><a href="" onclick="return startStop();" ><i id="audioboxplaybutton" class="fa fa-play"></i> </a></li>
-		<li><a href="" onclick="return showRating();" ><i class="fa fa-forward"></i> </a></li>
+		<li><a href="" onclick="return skipForward();" ><i class="fa fa-forward"></i> </a></li>
 		<li><a href="" onclick="return showRating();" ><i class="fa fa-music"></i> Total <span id="audioboxPLTotal">0:00</span></a></li>
 		<li><a href="" onclick="return volumeDown();" ><i class="fa fa-volume-down"></i> </a></li>
 		<li><a href="" onclick="return volumeUp();" ><i class="fa fa-volume-up"></i> </a></li>
@@ -68,7 +68,7 @@
 <!-- Playlist load/search stuff -->
 <div class="col_5 audioboxheader">
 	<ul class="button-bar">
-		<li><a href="#" onclick="return loadPlaylist();"><i class="fa fa-folder-open"></i> Load Playlist</a></li>
+		<li><a href="#" onclick="return loadPlaylist();"><i class="fa fa-folder-open"></i> Load Playlists</a></li>
 		<li><a href="#" onclick="return savePlaylist();"><i class="fa fa-save"></i> Save Playlist</a></li>
 		<li><a href="#" onclick="return emptyCurrent();"><i class="fa fa-file-o"></i> Empty Current Playlist</a></li>
 	</ul>
