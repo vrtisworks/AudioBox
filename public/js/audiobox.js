@@ -370,8 +370,7 @@ function gotSonglist(msg) {
 	rowTemplate=
 		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;sl4ls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return deleteMe('psl0ls');'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext('psl0ls');'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
-		//rowid='p'+songlist[i][9];	//Use songId as the ID we will use for this row
-		rowid='p'+songlist[i][0];	//Use playlist id as the ID we will use for this row
+		rowid='p'+songlist[i][0];	//Use playlist id as the data-dd we will use for this row
 		MyBox.Playlist[rowid]=[songlist[i][7],songlist[i][3],songlist[i][8],songlist[i][0]];
 		if ((i%2)==0) {
 			aRow=rowTemplate;
@@ -386,7 +385,8 @@ function gotSonglist(msg) {
 		aRow=aRow.replace(/sl4ls/g,songlist[i][4]);	//Duration/time
 		//aRow=aRow.replace(/sl5ls/g,songlist[i][5]);	//Position in the playlist (unused)
 		//aRow=aRow.replace(/sl6ls/g,songlist[i][6]);	//Playlist name (unused)
-		theRows+=aRow.replace(/sl7ls/g,songlist[i][7]);	//Trackid
+		//aRow.replace(/sl7ls/g,songlist[i][7]);	//Trackid
+		theRows+=aRow;
 		totaltime+=parseInt(songlist[i][8]);						//Add to total run time
 	}
 	document.getElementById("audioboxPLTotal").innerHTML=formatTimes (totaltime);
@@ -482,7 +482,7 @@ function gotReviewPlaylist(msg) {
 	var rowTemplate=
 		"<div class='audioboxDivRow'><div class='audioboxSongR tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistR'>sl1ls</div><div class='audioboxInfoR'><ul class='button-bar audioboxRight'><li class='first last'><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;sl4ls</a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
-		rowid='s'+i;	//Use the index as the ID we will use for this row (can't use position)
+		rowid='s'+i;	//Use the index as the data-dd we will use for this row
 		//Trackid, title, playlisttracks id,runtime
 		MyBox.Searchlist[rowid]=[songlist[i][7],songlist[i][3],songlist[i][8]];
 		if ((i%2)==0) {
@@ -498,7 +498,8 @@ function gotReviewPlaylist(msg) {
 		aRow=aRow.replace(/sl4ls/g,songlist[i][4]);	//Duration/time
 		//aRow=aRow.replace(/sl5ls/g,songlist[i][5]);	//Position in the playlist (unused)
 		//aRow=aRow.replace(/sl6ls/g,songlist[i][6]);	//Playlist name (unused)
-		theRows+=aRow.replace(/sl7ls/g,songlist[i][7]);	//Trackid
+		//aRow.replace(/sl7ls/g,songlist[i][7]);	//Trackid
+		theRows+=aRow;
 	}
 	document.getElementById("audioboxRightSide").innerHTML=theRows;
 	//Set up the song titles as drop sources
@@ -516,6 +517,7 @@ function gotReviewPlaylist(msg) {
 }
 //Set the source for the local audio and start it playing
 function playMe(objidx) {
+	//All I really need is the track id so I can get the location from the library table
 	var trackinfo;
 	//This might come from either the current playlist, OR the search or review lists
 	if (objidx.substring(0,1)=='s') {
@@ -523,9 +525,13 @@ function playMe(objidx) {
 	} else {
 		trackinfo=MyBox.Playlist[objidx];
 	}
-	document.getElementById("audioboxLocalAudio").src=MyBox.SiteURL+"loadSong/"+trackinfo[0];
+	document.getElementById("audioboxLocalAudio").src="http://coder.vrtisworks.home:3000/loadSong/"+trackinfo[0];
 	document.getElementById("audioboxlocaltitle").innerHTML=trackinfo[1];
-	document.getElementById("audioboxlocalseconds").innerHTML=trackinfo[2];
+	document.getElementById("audioboxlocalseconds").innerHTML=formatTimes(trackinfo[2]);
+	var movethis=document.getElementById("audioboxlocalprogress");
+	movethis.value=0;
+	movethis.max=trackinfo[2];
+	document.getElementById("audioboxLocalButton").className="fa fa-pause";
 	document.getElementById("audioboxLocalAudio").play();
 	return false;
 }
@@ -548,14 +554,23 @@ function formatTimes (thetime) {
 }
 function moveslider(theaudio) {
 	var movethis=document.getElementById("audioboxlocalprogress");
-	movethis.value=theaudio.currentTime/theaudio.duration*100.0;
+	movethis.value=theaudio.currentTime;
+	document.getElementById("audioboxlocalseconds").innerHTML=formatTimes(Math.floor(theaudio.duration-theaudio.currentTime));
 }
-function playLocal() {
-	document.getElementById("audioboxLocalAudio").play();
-	return false;
-}
-function pauseLocal() {
-	document.getElementById("audioboxLocalAudio").pause();
+
+//Toggle the local play/pause button
+function toggleLocal() {
+	//Toggle the local play/pause button.
+	var currently=document.getElementById("audioboxLocalButton").className;
+	if (currently.indexOf("fa-pause")<0) {
+		//We are paused.. so we want to start playing
+		document.getElementById("audioboxLocalAudio").play();
+		document.getElementById("audioboxLocalButton").className="fa fa-pause";
+	} else {
+		//We are playing.. so we want to pause
+		document.getElementById("audioboxLocalAudio").pause();
+		document.getElementById("audioboxLocalButton").className="fa fa-play";
+	}
 	return false;
 }
 //Empty the current playlist (will get returned an empty list

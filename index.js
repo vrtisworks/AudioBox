@@ -1,9 +1,8 @@
 // AudioBox - a NODE audio player for the Raspberry Pi (or just about any linux)
 //TODO:
 // Do we need an option to 'Loop' the playlist instead just once.
-// Ask for 'x' minutes of least played music
+// 
 // Really should html escape the titles etc.
-// Implement start/stop/pause/skip commands to Liquidsoap
 // We need to use the Telnet command to 'stop' the audio when the playlist runs out of entries.
 //     Otherwise, it will spin trying to get another file.
 // We need to keep a 'current song' index, instead of changes to the playlist.  This can be set
@@ -18,22 +17,18 @@
 // 3) Wait for browser to connect.
 
 //ToDo:
-//* - BUG - There is a bug/problem when moving stuff around.
-//    LiquidSoap may (or may not) have requested a song to work on in addition to the one currently playing.
-//    (it needs some time to decode, etc.. and at startup, it always grabs 2).
-//    So, I think we need to track what we have handed to LiquidSoap, in addition to what is currently playing(?)
-//* - The whole "which pieces are running, and in what order" needs some thought/work.
-//* - Need to add code for stop/start/forward/reverse
-//* - Need to add 'mute' for volume control
-//* - Need to implement 'delete from current playlist'
-//* - Need to implement 'play me next'
-//* - Change the 'empty current playlist' to a drop down with infrequent options
-//* - Need to 'fix' the playMe (play local in browser).. doesn't get the right filename
-//* - Check to see if DB needs to be created, and do so if necessary
-//* - Module to read ID3 information
 //* - BUG - don't let them try to start playing if the playlist is empty
 //* - BUG - if they delete the only song in a playlist, we need to 'destroy' the source or Liquidsoap will beat the system up asking
 //* - BUG - when they empty the playlist, the browser needs to 'stop' the current song (same with 'replace').
+//* - Create a 'random' playlist of songs unplayed
+//* - Need to add 'mute' for volume control
+//* - Need to implement 'delete from current playlist'
+//* - Need to implement 'play me next'
+//* - Need to create a 'crate'
+//* - Need to be able to select songs for review from a crate (pretty much the same as we do from a playlist)
+//* - Change the 'empty current playlist' to a drop down with infrequent options
+//* - Check to see if DB needs to be created, and do so if necessary
+//* - Module to read ID3 information
 
 //* - REFACTOR - model needs to some of the 'cpl' stuff in the model
 //             - make sure the request passed to model is consistant
@@ -118,8 +113,15 @@ app.get('/', function(req, res){
 
 //From Liquidsoap when it wants the next file to play
 app.get('/getNextSongFileName',function(req,res) {
-	console.log("GET: /getNextSongFileName");
+	console.log("/getNextSongFileName");
 	audiobox_model.getNextSongFileName(res);
+});
+//From the browser send then want to play a song locally
+app.get('/loadSong/:thisTrackId',function(req,res) {
+	audiobox_model.getTrackFileLocation(req.params.thisTrackId,function(sendthis) {
+		console.log("/loadSong"+sendthis);
+		res.sendFile(sendthis);
+	});
 });
 
 //I had hoped to do this via osc so I would not have to worry about how long it takes to get something back to LS
@@ -228,7 +230,7 @@ function doSkip(msg) {
 			sendTelnet("localAudio.start", function(ignore) {
 			});
 		} else {
-			//Someitmes LiquidSoap doesn't seem to want to continue playing after a skip.. so we need to check
+			//Sometimes LiquidSoap doesn't seem to want to continue playing after a skip.. so we need to check
 			sendTelnet("localAudio.status", function(response) {
 				console.log("Status check: "+response);
 				var lines=response.split("\n");

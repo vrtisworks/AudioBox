@@ -44,6 +44,19 @@ var audiobox_model = function(sqlite3,io) {
 		});
 	}
 	
+	//When the browser wants to play a song locally, we need to full location
+	getTrackFileLocation=function(thisTrack,callback) {
+    	var sql="SELECT tl.location FROM library AS lib LEFT JOIN track_locations AS tl ON lib.location=tl.id WHERE lib.id=?";
+			db.get(sql,thisTrack, function(err,row) {
+				if (typeof row != 'undefined') {
+    			var filename=row.location.replace("D:/RealMusic/","/mnt/remotemusic/");
+				callback(filename);
+			} else {
+				console.log('Missing Track Location: '+thisTrack);
+			}
+		});
+	}
+	
 	//Skip - we need to '+' or '-' the nextSongIdx
 	skipSong=function(direction) {
 		if (mythis.songIdListCnt<2 || direction=='+') {
@@ -52,7 +65,7 @@ var audiobox_model = function(sqlite3,io) {
 			return;
 		}
 		//We subtract 2 because it is 'next' song.. if we did 1, then we would be back to the currently playing song
-		mythis.nextSongIdx=mythis.nextSondIdx-2;
+		mythis.nextSongIdx=mythis.nextSongIdx-2;
 		if (mythis.nextSongIdx<0) {
 			mythis.nextSongIdx=mythis.songIdListCnt-mythis.nextSongIdx;
 		}
