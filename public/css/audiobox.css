@@ -148,6 +148,11 @@ div.audioboxDivRowPlaying {
 }
 #audioboxsrchFor {
 	font-size: 12px;
-	margin-top: 7px;
-	margin-left: 20px;
+	margin-top: 9px;
+	margin-left: 26px;
+}
+#audioboxlowuse {
+	font-size: 12px;
+	margin-top: 9px;
+	margin-left: 5px;
 }

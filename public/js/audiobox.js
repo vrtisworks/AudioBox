@@ -11,6 +11,7 @@ $( document ).ready(function() {
 	MyBox.Socket.on("songStopped",songStopped);					//When we are told LiquidSoap just started a song
 	MyBox.Socket.on("songCrates",songCrates);					//When we get the list of crates that the playing song is part of
 	MyBox.Socket.on("gotCratesList",gotCratesList);				//When we get the complete list of crates for the select list
+	MyBox.Socket.on("clearCurrentPlaying",clearCurrentPlaying);	//When the playlist is replaced, nothing is playing.
 	//Ask for the list of crates available
 	MyBox.Socket.emit("getCratesList",'{"event" : "gotCratesList"}');
 	//Get the current playlist
@@ -132,6 +133,25 @@ function ratingChanged() {
 	//Hide the box
 	var ratings=document.getElementById("audioboxratingpopup");
 	ratings.className="hide";
+}
+//Clear out the 'currently playing' 'stuff' because the playlist was replaced
+function clearCurrentPlaying(msg) {
+	//Kill the timer first...
+	if (MyBox.playingTimer.id!==false) {
+		clearInterval(MyBox.playingTimer.id);
+		MyBox.playingTimer.id=false;
+	}
+	document.getElementById("audioboxsongprogress").value=0;
+	document.getElementById("audioboxsongprogress").max=0;
+	MyBox.playingTimer.value=0;
+	MyBox.playingTimer.max=0;
+	MyBox.playingTimer.rowid="";
+	document.getElementById("audioboxsongtitle").innerHTML="No song playing";
+	document.getElementById("audioboxsongseconds").innerHTML="0.00";
+	//Set time left to 0.00
+	document.getElementById("audioboxPLTotal").innerHTML="0.00";
+	//We need to change the icon to be 'start playing'
+	document.getElementById("audioboxplaybutton").className='fa fa-play';
 }
 
 //We get this when the server hears that LiquidSoap as actually started playing a song
@@ -573,9 +593,17 @@ function toggleLocal() {
 	}
 	return false;
 }
-//Empty the current playlist (will get returned an empty list
-function emptyCurrent() {
-	MyBox.Socket.emit('emptyCurrentList','{"event" : "gotCurrentSongList"}');
+//When one of the infrequently used options is picked
+function optionPicked() {
+	var opt=document.getElementById("audioboxlowuse").value;
+	if (opt=="empty") {
+		MyBox.Socket.emit('emptyCurrentList','{"event" : "gotCurrentSongList"}');
+	}
+	if (opt=="random") {
+		MyBox.Socket.emit('randomList','{"event" : "gotCurrentSongList"}');
+	}
+	//Reset selection back to 'options'
+	document.getElementById("audioboxlowuse").selectedIndex=0; 
     return false;
 }
 

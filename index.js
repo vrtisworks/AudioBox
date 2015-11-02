@@ -1,15 +1,4 @@
 // AudioBox - a NODE audio player for the Raspberry Pi (or just about any linux)
-//TODO:
-// Do we need an option to 'Loop' the playlist instead just once.
-// 
-// Really should html escape the titles etc.
-// We need to use the Telnet command to 'stop' the audio when the playlist runs out of entries.
-//     Otherwise, it will spin trying to get another file.
-// We need to keep a 'current song' index, instead of changes to the playlist.  This can be set
-//     to 0 (first song) when we load a new playlist into 'current' (means it will not persist over
-//     across node restarts.. but that is an enhancement for V2).
-// V2 - need an option to randomize the playlist.
-//      need an option to select random tracks (time?, count?)
 
 //The 'process'
 // 1) Start up Liquidsoap
@@ -19,8 +8,7 @@
 //ToDo:
 //* - BUG - don't let them try to start playing if the playlist is empty
 //* - BUG - if they delete the only song in a playlist, we need to 'destroy' the source or Liquidsoap will beat the system up asking
-//* - BUG - when they empty the playlist, the browser needs to 'stop' the current song (same with 'replace').
-//* - Create a 'random' playlist of songs unplayed
+//* - BUG - Really should html escape the titles etc.
 //* - Need to add 'mute' for volume control
 //* - Need to implement 'delete from current playlist'
 //* - Need to implement 'play me next'
@@ -30,6 +18,9 @@
 //* - Check to see if DB needs to be created, and do so if necessary
 //* - Module to read ID3 information
 
+// V2 enhancements
+//* - need an option to play the list only once.
+//* - need an option to play everything locally (this is not a simple change though)
 //* - REFACTOR - model needs to some of the 'cpl' stuff in the model
 //             - make sure the request passed to model is consistant
 //             - move the emits out of model and into index.js(?)
@@ -51,6 +42,7 @@ var songCallbacks={
 	listevent : "gotCurrentSongList",
 	songevent : "songStarted",
 	crateevent : "songCrates",
+	clearcurrentevent : "clearCurrentPlaying",
 	errorevent : "gotAnError"};
 
 var telnetparms = {
@@ -156,6 +148,7 @@ io.on('connection', function(socket) {
 	socket.on('startStop',startStop);
 	socket.on('adjustVolume',adjustVolume);
 	socket.on('doSkip',doSkip);
+	socket.on('randomList',randomList);
 	//Check to see if anything is currently playing
 	var songPlaying=audiobox_model.getSongPlaying();
 	if (songPlaying[0]!='*') {
@@ -209,6 +202,15 @@ audiobox_model.modelInit(function() {
 	});
 });
 
+//Create a new playlist with random songs
+function randomList(msg) {
+	var request=JSON.parse(msg);
+	console.log("randomList: "+msg);
+	//Tell the browser that nothing is playing now
+	io.emit(songCallbacks.clearcurrentevent,'');
+	audiobox_model.makeRandomPlaylist(request);
+}
+
 //Skip forward or backward
 function doSkip(msg) {
 	//We don't really need to return anything to the browser.	
@@ -252,7 +254,7 @@ function startStop(msg) {
 	//First we need to get the current state of LiquidSoap
 	sendTelnet("localAudio.status",function(response) {
 		var lines=response.split('\n');
-		var cmd='*';
+		var cmd='';
 		if (lines[0]=='on') {
 			if (request.makeit=='stop') {
 				//It is currently playing a song.. so we just need to stop it.
@@ -366,7 +368,8 @@ function replaceCurrentList(msg) {
     console.log('replaceCurrentList: ' + msg);
     var request=JSON.parse(msg);
     request.type="replace";
-    //This is sort of 'brutal' - we really should wait for the current song to finish.. 
+	//Tell the browser that nothing is playing now
+	io.emit(songCallbacks.clearcurrentevent,'');
     sendTelnet("audiobox.stop", function (ignore) {
     	audiobox_model.setSongPlaying("*", "");
 	    audiobox_model.replaceCurrentList(request);
@@ -376,8 +379,9 @@ function replaceCurrentList(msg) {
 function emptyCurrentList(msg) {
     console.log('emptyCurrentList: ' + msg);
     var request=JSON.parse(msg);
+	//Tell the browser that nothing is playing now
+	io.emit(songCallbacks.clearcurrentevent,'');
     request.type="empty";
-    //This is sort of 'brutal' - we really should wait for the current song to finish.. 
     sendTelnet("audiobox.stop", function (ignore) {
     	audiobox_model.setSongPlaying("*", "");
     	audiobox_model.emptyCurrentList(request);

@@ -42,11 +42,11 @@
 	<div id="audioboxratingpopup" class="hide" style="z-index: 200; position: absolute;">
 		<select id="audioboxrating" onchange="ratingChanged();" onblur="cancelRatingChange();">
 			<option value="0">-</option>
-			<option value="1">*</option>
-			<option value="2">**</option>
-			<option value="3">***</option>
-			<option value="4">****</option>
-			<option value="5">*****</option>
+			<option value="1">(1)*</option>
+			<option value="2">(2)**</option>
+			<option value="3">(3)***</option>
+			<option value="4">(4)****</option>
+			<option value="5">(5)*****</option>
 		</select>
 	</div>
 	<div id="audioboxcratepopup" class="hide" style="z-index: 200; position: absolute;" onblur="cancelCrateChange();">
@@ -54,7 +54,6 @@
 				<option value="0">-None-</option>
 		</select>
 		<br>	
-		<!-- <button class="red small pop" onclick="return cancelCrateChange();"><i class="fa fa-undo"></i> </button> -->
 		<button class="green small pop" onclick="return saveCrateChange();"><i class="fa fa-save"></i> Save</button>
 	</div>
 </div>
@@ -69,8 +68,13 @@
 	<ul class="button-bar">
 		<li><a href="#" onclick="return loadPlaylist();"><i class="fa fa-folder-open"></i> Load Playlists</a></li>
 		<li><a href="#" onclick="return savePlaylist();"><i class="fa fa-save"></i> Save Playlist</a></li>
-		<li><a href="#" onclick="return emptyCurrent();"><i class="fa fa-file-o"></i> Empty Current Playlist</a></li>
+		<!-- <li><a href="#" onclick="return emptyCurrent();"><i class="fa fa-file-o"></i> Empty Current Playlist</a></li> -->
 	</ul>
+	<select id="audioboxlowuse" name="audioboxlowuse" onchange="optionPicked();">
+			<option value="0 selected="1">Options</option>
+			<option value="empty">Empty Current Playlist</option>
+			<option value="random">Create Random Playlist</option>
+	</select>
 </div>
 <!-- End of first row -->
 

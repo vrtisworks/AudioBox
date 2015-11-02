@@ -2,12 +2,12 @@ var audiobox_model = function(sqlite3,io) {
 	console.log('./db/mixxxdb.sqlite');
 	var mythis = this;		//So I can get at the db.
 	var db = new sqlite3.Database('./db/mixxxdb.sqlite',sqlite3.OPEN_READWRITE);
-	mythis.audioboxId;			//This is the 'current' playlist id
+	mythis.audioboxId;			//This is the 'AUDIOBOX' playlist id
 	mythis.nextSongIdx=0;		//The index to the next song to play in songIdList
 	mythis.songPlaying=["*",""];	//[0]=current playing status (*=never started, r=running, p=paused)
 										//[10=songId of currently playing song
 	mythis.songIdListCnt=0;		//The number of songs in the current playlist
-	mythis.songIdList=[0];		//The PlaylistId_TrackIds for the songs to play, in play order
+	mythis.songIdList=[];		//The PlaylistId_TrackIds for the songs to play, in play order
 								//NOTE: sqlite reuses a id of deleted rows.  So if we delete & add a playlist
 								//      PlaylistId might not be unique if we change/replace the playlist while something is playing
 	var myio=io;				//So I can send stuff back to the browser
@@ -42,6 +42,68 @@ var audiobox_model = function(sqlite3,io) {
 				callback();
 			});
 		});
+	}
+	
+	//Create a playlist of 25(?) random songs
+	makeRandomPlaylist=function(request) {
+		//First we empty out all the tracks from the AUDIOBOX playlist
+		var sql="DELETE FROM PlaylistTracks WHERE playlist_id=?";
+		db.run(sql,[mythis.audioboxId],function(result) {
+			console.log("Random - Delete done: "+this.changes);
+			mythis.songIdListCnt=0;		//Clean out our table
+			mythis.songIdList=[];
+			//This is an 'expensive' query (it will scan the whole library), so we only do it once
+			var sql="SELECT MAX(id) AS maxid, COUNT(id) AS available FROM library WHERE timesplayed=0";
+			db.all(sql,[],function(err,rows) {
+				//available/maxid is 'sort of' the percentage of unplayed songs we have
+				rows[0].availratio=rows[0].available/rows[0].maxid;
+				rows[0].collected=0;
+				console.log("Random - libInfo");
+				console.log(rows[0]);
+				mythis.collectRandomSongs(rows[0],function () {
+					console.log("Random - collection done");
+					request.type=='replace';
+					mythis.getCurrentPlaylist(request);
+				});
+			});
+		});
+	}
+	
+	//Collect the random tracks to play - NOTE: This will call itself, but it really isn't recursive
+	collectRandomSongs = function(libInfo, callback) {
+		//See if we are done yet.
+		if (libInfo.collected>=25) {
+			callback();
+		} else {
+			//We need to get another one
+			//NOTE: The 'problem' is that sqlite applies the LIMIT after the result set is created.
+			//       So, if I have a high percentage of unplayed songs, I could get a large result set
+			//       and only pick one.
+			//       But, if I have a low percentage, my odds of actually finding one in a small range gets small
+			var startat=Math.floor(Math.random()*libInfo.maxid);
+			var endat=startat+10;
+			if (libInfo.availratio<0.25) {
+				//If we don't have 'many'... then we will give sqlite a larger range.
+				endat=libInfo.maxid;
+			}
+			var sql="SELECT id FROM library WHERE id>=? AND id<+? AND  timesplayed=0 LIMIT 1";
+			console.log("Trying: "+startat+" - "+endat);
+			db.all(sql,[startat,endat], function(err,rows) {
+				//NOTE: purists might argue that this isn't 'truly' random - but it's close enough for what we are doing
+				if (rows.length==1) {
+					sql="INSERT INTO PlaylistTracks (playlist_id, track_id, position) VALUES (?, ?, ?)"; 
+					db.run(sql,[mythis.audioboxId,rows[0].id,libInfo.collected+1],function(result) {
+    					console.log("Random Track Insert: "+this.lastID+" > "+rows[0].id);
+    					libInfo.collected++;
+						mythis.collectRandomSongs(libInfo, callback);
+    				});
+
+				} else {
+					//Just go try to get another one	
+					mythis.collectRandomSongs(libInfo, callback);
+				}	
+			});
+		}
 	}
 	
 	//When the browser wants to play a song locally, we need to full location
@@ -193,7 +255,7 @@ var audiobox_model = function(sqlite3,io) {
 	}
 		
     //Once we get told Liquidsoap has started the song, we need to tell the browser that it has started, then adjust the playlist
-    //NOTE: theSonsId contains both the playlist track id and the track id.  The song MIGHT not be in the playlist track id.
+    //NOTE: theSongId contains both the playlist track id and the track id.  The song MIGHT not be in the playlist track id.
     //      so we only rely on the track id.
     //      ALSO.. if request.remaining >0, then we will use that instead of from the track table because the song has already started
 	getSongStarted = function(request) {
