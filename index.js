@@ -13,21 +13,12 @@
 //* - Need to implement 'delete from current playlist'
 //* - Need to implement 'play me next'
 //* - Need to create a 'crate'
+//* - Need to be able to load the songs in a crate for review (just like Playlist)
 //* - Need to be able to select songs for review from a crate (pretty much the same as we do from a playlist)
-//* - Change the 'empty current playlist' to a drop down with infrequent options
 //* - Check to see if DB needs to be created, and do so if necessary
 //* - Module to read ID3 information
-
-// V2 enhancements
 //* - need an option to play the list only once.
 //* - need an option to play everything locally (this is not a simple change though)
-//* - REFACTOR - model needs to some of the 'cpl' stuff in the model
-//             - make sure the request passed to model is consistant
-//             - move the emits out of model and into index.js(?)
-//             - look at an 'event' model document "Here are the events I emit", "Here are the events I understand"
-//             - do I have any multiple returns from model (yes. at least songStarted sends back the playing information, and then the 
-//               crate information.
-//             - rename 'crate' to ?
 
 var express=require('express');
 var app = express();
@@ -37,6 +28,7 @@ var io = require('socket.io')(http);
 var telnet = require('telnet-client');
 var telnetconnection = new telnet();
 var telnetconnected=false;
+/*
 //These are the callbacks from the browser for when we get information from Liquidsoap
 var songCallbacks={
 	listevent : "gotCurrentSongList",
@@ -44,6 +36,7 @@ var songCallbacks={
 	crateevent : "songCrates",
 	clearcurrentevent : "clearCurrentPlaying",
 	errorevent : "gotAnError"};
+*/
 
 var telnetparms = {
   host: '192.168.0.112',			//Change to localhost/127.0.0.1 later
@@ -69,31 +62,15 @@ telnetconnection.on("error", function(err) {
 	console.log("Telnet error:");
 	console.log(err);
 	//Send an alert off to the browser if we can
-	if (songCallbacks) {
-		io.emit(songCallbacks.gotAnError,JSON.stringify(err));
-	}
+	io.emit("gotAnError",JSON.stringify(err));
 });
 //Crank up telnet
 telnetconnection.connect(telnetparms);
 
-function sendTelnet(cmd, callback) {
-	if (telnetconnected) {
-		telnetconnection.exec(cmd, function(response) {
-			//console.log(cmd+" Response: "+response);
-			callback(response);
-		});
-	} else {
-		//Send an alert off to the browser if we can
-		if (songCallbacks) {
-			io.emit(songCallbacks.gotAnError,'{"error":"Not connected","cmd":"'+cmd+'"}');
-		}
-		console.log("Not connected: "+cmd);
-	}
-}
-
-var sqlite3 = require('sqlite3').verbose();
 //Load the db model code.
-var audiobox_model = require('./public/js/audiobox_model.js')(sqlite3,io);
+var Audiobox_Model = require('./public/js/audiobox_model.js');
+var audioboxDB = new Audiobox_Model(io);
+audioboxDB.setUp(housekeeping);	//Once setup is done, I can check up on LiquidSoap status and other housekeeping 'stuff'
 
 //Put all our static assets in public
 app.use(express.static('public'));
@@ -105,12 +82,12 @@ app.get('/', function(req, res){
 
 //From Liquidsoap when it wants the next file to play
 app.get('/getNextSongFileName',function(req,res) {
-	console.log("/getNextSongFileName");
-	audiobox_model.getNextSongFileName(res);
+	console.log("getNextSongFileName");
+	audioboxDB.getNextSongFileName(res);
 });
 //From the browser send then want to play a song locally
 app.get('/loadSong/:thisTrackId',function(req,res) {
-	audiobox_model.getTrackFileLocation(req.params.thisTrackId,function(sendthis) {
+	audioboxDB.getTrackFileLocation(req.params.thisTrackId,function(sendthis) {
 		console.log("/loadSong"+sendthis);
 		res.sendFile(sendthis);
 	});
@@ -120,11 +97,9 @@ app.get('/loadSong/:thisTrackId',function(req,res) {
 app.get('/songStarted/:thisPlId',function(req,res) {
 	//I HOPE this closes the HTTP connection, so I can take my time about the rest.
 	res.sendStatus(200);	
-	//And we must be 'playing' because LiquidSoap just 'changed' songs
-	audiobox_model.setSongPlaying('r',req.params.thisPlId);
-	var request=songCallbacks;
-	request.remaining=0;				//Since this is coming from LiquidSoap, it's a new song - use the metadata duration
-	audiobox_model.getSongStarted(request);
+	console.log("songStarted");
+	audioboxDB.setSongPlaying('r',req.params.thisPlId);
+	audioboxDB.getSongStarted();
 });
 
 io.on('connection', function(socket) {
@@ -135,7 +110,8 @@ io.on('connection', function(socket) {
   	});
 	//Here are all the calls we make via the socket
 	socket.on('getCurrentPlaylist', getCurrentPlaylist);
-	socket.on('getSavedLists', getSavedLists);
+	socket.on('getPlaylists', getPlaylists);
+	socket.on('getPlaylistNames', getPlaylistNames);
 	socket.on('emptyCurrentList', emptyCurrentList);
 	socket.on('replaceCurrentList',replaceCurrentList);
 	socket.on('saveCurrentList',saveCurrentList);
@@ -150,35 +126,37 @@ io.on('connection', function(socket) {
 	socket.on('doSkip',doSkip);
 	socket.on('randomList',randomList);
 	//Check to see if anything is currently playing
-	var songPlaying=audiobox_model.getSongPlaying();
-	if (songPlaying[0]!='*') {
+	var songPlaying=audioboxDB.getCurrentStatus();
+	if (songPlaying!='*') {
 		//Yes-so we need to ask LiquidSoap for the time remaining.
 		sendTelnet("audiobox.getid", function(response) {
 			console.log("Browser getid: "+response);
 			var lines=response.split("\n");
+			//We get Currently Playing ID, Time Remaining, Last requested ID
 			lines=lines[0].split(",");
 			//First part is the songId, second part is time remaining (sort of)
 			lines[1]=Math.floor(lines[1]);
 			console.log("Playing: "+lines[0]+" : "+lines[1]);
-			var request=songCallbacks;
-			request.remaining=lines[1];
-			audiobox_model.getSongStarted(request);
+			audioboxDB.setSongPlaying("r", lines[0])
+			audioboxDB.getSongStarted(lines[1]);
 		});
 	}		//The browser assumes nothing is playing, so we don't need to do anything
 });
 
 //We need to do some housekeeping before we can start accepting browser connections
-audiobox_model.modelInit(function() {
+function housekeeping() {
+	console.log("In housekeeping");
 	//Ask LiquidSoap if anything is currently playing and what we have given it to decode.
 	sendTelnet("audiobox.getid", function(response) {
 		console.log("Initial getid: "+response);
 		var lines=response.split('\n');
+		//We get Currently Playing ID, Time Remaining, Last requested ID
 		lines=lines[0].split(",");
-		//Tell the model to set up the next & playing indexes
-		audiobox_model.setNextSongIdx(lines[2]);
+		//Tell the model to set up the next & playing indexes based on the last song Liquidsoap requested.
+		audioboxDB.setNextSongIdx(lines[2]);
 		if (lines[0]=="*") {
 			//Pretty simple - nothing is playing, so we can just start up connections
-			audiobox_model.setSongPlaying("*", "");
+			audioboxDB.setSongPlaying("*", "");
 			http.listen(3000, function() {
 				console.log('Listening:Nothing playing');
 			});
@@ -188,10 +166,10 @@ audiobox_model.modelInit(function() {
 				var onoff=response.split("\n");
 				if (onoff[0]=="on") {
 					//It is still running
-					audiobox_model.setSongPlaying("r", lines[0]);
+					audioboxDB.setSongPlaying("r", lines[0]);
 				} else {
 					//It is paused
-					audiobox_model.setSongPlaying("p", lines[0]);
+					audioboxDB.setSongPlaying("p", lines[0]);
 				}
 				//NOW we can accept connections
 				http.listen(3000, function() {
@@ -200,15 +178,28 @@ audiobox_model.modelInit(function() {
 			});
 		}
 	});
-});
+};
+
+function sendTelnet(cmd, callback) {
+	if (telnetconnected) {
+		telnetconnection.exec(cmd, function(response) {
+			//console.log(cmd+" Response: "+response);
+			callback(response);
+		});
+	} else {
+		//Send an alert off to the browser too
+		io.emit("gotAnError",'{"error":"Not connected","cmd":"'+cmd+'"}');
+		console.log("Not connected: "+cmd);
+		callback("*,0,*\n");
+	}
+}
 
 //Create a new playlist with random songs
-function randomList(msg) {
-	var request=JSON.parse(msg);
-	console.log("randomList: "+msg);
+function randomList() {
+	console.log("randomList.");
 	//Tell the browser that nothing is playing now
-	io.emit(songCallbacks.clearcurrentevent,'');
-	audiobox_model.makeRandomPlaylist(request);
+	io.emit("clearCurrentPlaying",'');
+	audioboxDB.makeRandomPlaylist();
 }
 
 //Skip forward or backward
@@ -216,9 +207,9 @@ function doSkip(msg) {
 	//We don't really need to return anything to the browser.	
 	var request=JSON.parse(msg);
 	console.log("doSkip: "+msg);
-	var playing=audiobox_model.getSongPlaying();
+	var playing=audioboxDB.getSongPlaying();
 	//In any case, we need to tell the model to move it's pointer
-	audiobox_model.skipSong(request.direction);
+	audioboxDB.skipSong(request.direction);
 	if (playing[0]=='*') {
 		//If LiquidSoap isn't running, then we are done.
 		return;
@@ -278,6 +269,10 @@ function startStop(msg) {
 			//It has never been started.. and they want it stopped... so we are done
 			cmd='';
 		}
+		if (request.makeit=='stop') {
+			//If we are stopping, then there is no DB call to emit the event back to the browser
+			io.emit("songStopped",'');
+		}
 		if (cmd!='') {
 			sendTelnet(cmd,function(response) {
 				console.log("startStop: "+cmd);
@@ -288,19 +283,14 @@ function startStop(msg) {
 					lines=lines[0].split(",");
 					//Next, etc. are already set - we are up and running
 					//We need to tell the model that LiquidSoap will be running
-					audiobox_model.setSongPlaying("r", lines[0]);
+					audioboxDB.setSongPlaying("r", lines[0]);
 					//Then tell LiquidSoap to actually start running
 					sendTelnet("localAudio.start",function(ignored) {
 						//Then send the information off to the browser
 						lines[1]=Math.floor(lines[1]);				//With a new run time remaining
 						console.log("Restarting: "+lines[0]+" : "+lines[1]);
-						var request=songCallbacks;
-						request.remaining=lines[1];
-						audiobox_model.getSongStarted(request);
+						audioboxDB.getSongStarted(lines[1]);		//This will issue a 'songStarted"
 					});
-				} else if (request.event) {
-					//They want a response. (should be songStopped)
-					io.emit(request.event,'');
 				}
 			});
 		}
@@ -331,90 +321,85 @@ function adjustVolume(msg) {
 function getSongCrates(msg) {
 	console.log('getSongCrates: '+msg);
 	var request=JSON.parse(msg);
-	audiobox_model.getSongCrates(request);
-}
-//Just in case we start after the browser has started.
-function getSongEvents() {
-	io.emit('getSongEvents','');
+	audioboxDB.getSongCrates(request);
 }
 //When the user changes the crates to put a song in
 function cratesChanged(msg) {
 	console.log('cratesChanged: '+msg);
 	var request=JSON.parse(msg);
-	audiobox_model.cratesChanged(request);
+	audioboxDB.cratesChanged(request);
+}
+//When the browser wants the complete list of crates
+function getCratesList(msg) {
+    console.log('getCratesList: ' + msg);
+	var request=JSON.parse(msg);
+    audioboxDB.getCratesList();
 }
 //When the user changes the rating for the currently playing song
 function ratingChanged(msg) {
 	console.log('ratingChanged: '+msg);
 	var request=JSON.parse(msg);
-	audiobox_model.ratingChanged(request);
+	audioboxDB.ratingChanged(request);
 }
 
-//When the browser wants the complete list of crates
-function getCratesList(msg) {
-    console.log('getCratesList: ' + msg);
-	var request=JSON.parse(msg);
-    audiobox_model.getCratesList(request);
-}
 //When we want to save the current list with a name (it could be a replace)
 //We don't bother returning anything, since nothing in the display changed.
 function saveCurrentList(msg) {
     console.log('saveCurrentList: ' + msg);
     var request=JSON.parse(msg);
-    audiobox_model.saveCurrentList(request);
+    audioboxDB.saveCurrentList(request.named);
 }
 //When they select a playlist to make 'current'
 function replaceCurrentList(msg) {
     console.log('replaceCurrentList: ' + msg);
     var request=JSON.parse(msg);
-    request.type="replace";
 	//Tell the browser that nothing is playing now
-	io.emit(songCallbacks.clearcurrentevent,'');
+	io.emit("clearCurrentPlaying",'');
     sendTelnet("audiobox.stop", function (ignore) {
-    	audiobox_model.setSongPlaying("*", "");
-	    audiobox_model.replaceCurrentList(request);
+    	audioboxDB.setSongPlaying("*", "");
+	    audioboxDB.replaceCurrentList(request);
 	});
 }
 //When we are asked to empty the current list
-function emptyCurrentList(msg) {
-    console.log('emptyCurrentList: ' + msg);
-    var request=JSON.parse(msg);
+function emptyCurrentList() {
+    console.log('emptyCurrentList.');
 	//Tell the browser that nothing is playing now
-	io.emit(songCallbacks.clearcurrentevent,'');
-    request.type="empty";
+	io.emit("clearCurrentPlaying",'');
     sendTelnet("audiobox.stop", function (ignore) {
-    	audiobox_model.setSongPlaying("*", "");
-    	audiobox_model.emptyCurrentList(request);
+    	audioboxDB.setSongPlaying("*", "");
+    	audioboxDB.emptyCurrentList();
     });
 }
 //When we are asked for the current song list
-function getCurrentPlaylist(msg) {
-    console.log('getCurrentPlaylist: ' + msg);
-    var request=JSON.parse(msg);
-    request.type="simple";
-    audiobox_model.getCurrentPlaylist(request);
+function getCurrentPlaylist() {
+    console.log('getCurrentPlaylist.');
+    audioboxDB.getCurrentPlaylist("simple");
 }
 //When we want to get a list of all the playlists we have defined
-function getSavedLists(msg) {
-	console.log('getSavedLists: '+msg);
-	var request=JSON.parse(msg);
-	audiobox_model.getSavedLists(request);
+function getPlaylists() {
+	console.log("getPlaylists.");
+	audioboxDB.getPlaylists();
+}
+//When we want to just get a list of all playlist names
+function getPlaylistNames() {
+	console.log("getPlaylistNames.");
+	audioboxDB.getPlaylistNames();
 }
 //When we want to get a playlist to review the contents over on the right side.
 function getForReview(msg) {
 	console.log('getForReview: '+msg);
 	var request=JSON.parse(msg);
-	audiobox_model.getForReview(request);
+	audioboxDB.getForReview(request);
 }
 //Do the search of the database
 function doSearch(msg) {
 	console.log('doSearch: '+msg);
 	var request=JSON.parse(msg);
-	audiobox_model.doSearch(request);
+	audioboxDB.doSearch(request);
 }
 function updatePlaylist(msg) {
 	console.log('updatePlaylist: '+msg);
 	var request=JSON.parse(msg);
 	request.type="update";
-	audiobox_model.updatePlaylist(request);
+	audioboxDB.updatePlaylist(request);
 }

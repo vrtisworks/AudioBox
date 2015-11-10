@@ -1,21 +1,19 @@
 $( document ).ready(function() {
 	//Set up all the event callbacks once.
 	MyBox.Socket.on("gotAnError",gotAnError);					//When the server has an error to tell the user.
-	//MyBox.Socket.on("getSongEvents",registerSongEvents);		//When we get asked for our events from LiquidSoap
-	//registerSongEvents();										//Send the song related events as soon as we can
-	MyBox.Socket.on("gotCurrentSongList",gotSonglist);			//When we get the list of songs in the current playlist
+	MyBox.Socket.on("gotCurrentSongList",gotCurrentSonglist);	//When we get the list of songs in the current playlist
 	MyBox.Socket.on("gotPlaylists",gotPlaylists);				//When we get a list of playlists for the right side
-	MyBox.Socket.on("savingPlaylist",savingPlaylist);			//When we the list of playlists as part of saving a playlist
-	MyBox.Socket.on("gotReviewPlaylist",gotReviewPlaylist);		//When we get a list of songs in a playlist for the right side
+	MyBox.Socket.on("gotPlaylistNames",gotPlaylistNames);		//When we the list of playlists as part of saving a playlist
+	MyBox.Socket.on("gotReviewList",gotReviewList);				//When we get a list of songs in a playlist for the right side
 	MyBox.Socket.on("songStarted",songStarted);					//When we are told LiquidSoap just started a song
 	MyBox.Socket.on("songStopped",songStopped);					//When we are told LiquidSoap just started a song
 	MyBox.Socket.on("songCrates",songCrates);					//When we get the list of crates that the playing song is part of
-	MyBox.Socket.on("gotCratesList",gotCratesList);				//When we get the complete list of crates for the select list
+	MyBox.Socket.on("cratesList",gotCratesList);				//When we get the complete list of crates for the select list
 	MyBox.Socket.on("clearCurrentPlaying",clearCurrentPlaying);	//When the playlist is replaced, nothing is playing.
 	//Ask for the list of crates available
-	MyBox.Socket.emit("getCratesList",'{"event" : "gotCratesList"}');
+	MyBox.Socket.emit("getCratesList",'');
 	//Get the current playlist
-	MyBox.Socket.emit('getCurrentPlaylist','{"event" : "gotCurrentSongList"}');
+	MyBox.Socket.emit('getCurrentPlaylist','');
 });
 
 //For 'now', we will just alert the user that there was an error...  Not much we can do about it yet.
@@ -27,13 +25,11 @@ function gotAnError(msg) {
 function startStop() {
 	//Get the current setting (can tell from the class)
 	var makeit='start';				//Assume it's paused/stopped and we need to start it up
-	var callback='';				//We really don't need this, because the server already knows
 	if (document.getElementById("audioboxplaybutton").className.indexOf('fa-pause')>=0) {
 		makeit='stop';
-		callback=',"event" : "songStopped"';			//We want a notification back so all browsers get the state change
 	}
-	//We don't need to change the icon if we are going from paused to playing, since the server will send us a 'song started'
-	MyBox.Socket.emit("startStop",'{"makeit" : "'+makeit+'"'+callback+'}');
+	//We don't need to change the icon - we either get a songStarted, or a songStopped
+	MyBox.Socket.emit("startStop",'{"makeit" : "'+makeit+'"}');
 	return false;
 }
 
@@ -95,7 +91,7 @@ function cancelCrateChange() {
 	var crates=document.getElementById("audioboxcratepopup");
 	crates.className="hide";
 	//Refresh the selections, just in case they changed them.
-	MyBox.Socket.emit("getSongCrates",'{"track_id":"'+document.getElementById("audioboxcrates").options[0].value+'","crateevent":"songCrates"}');
+	MyBox.Socket.emit("getSongCrates",'{"track_id":"'+document.getElementById("audioboxcrates").options[0].value+'"}');
 	return false;
 }
 //When they hit the save button on the crates list.
@@ -158,7 +154,7 @@ function clearCurrentPlaying(msg) {
 function songStarted(msg) {
 	var data=playlists=JSON.parse(msg);
 	document.getElementById("audioboxsongtitle").innerHTML=data.title;
-	document.getElementById("audioboxsongseconds").innerHTML=data.ftime;
+	document.getElementById("audioboxsongseconds").innerHTML=formatTimes(data.duration);
 	var options=document.getElementById("audioboxrating").options
 	options[0].value=data.track_id;				//We save the library id of the track in the options[0] value,
 												// since the selectedIndex will be the rating value anyway.
@@ -285,8 +281,7 @@ function checkForCR() {
 	if (event.keyCode==13) {
 		var request={};
 		request.term=document.getElementById("audioboxsrchWords").value;
-		request.type=document.getElementById("audioboxsrchFor").value;
-		request.event='gotReviewPlaylist';		
+		request.type=document.getElementById("audioboxsrchFor").value;	
 		MyBox.Socket.emit('doSearch',JSON.stringify(request));
 		return false;
 	}
@@ -295,12 +290,12 @@ function checkForCR() {
 
 //When they hit the Load Playlist button - we setup the option and request the list
 function loadPlaylist() {
-	MyBox.Socket.emit('getSavedLists','{"event" : "gotPlaylists"}');
+	MyBox.Socket.emit("getPlaylists",'');
 	return false;
 }
 //When they hit the Save Playlist button - we need to request the list of playlists so that they can choose an existing one
 function savePlaylist() {
-	MyBox.Socket.emit('getSavedLists','{"event" : "savingPlaylist"}');
+	MyBox.Socket.emit('getPlaylistNames','');
 	return false;
 }
 //Return from getting the list of playlists we currently have.
@@ -331,19 +326,16 @@ function gotPlaylists(msg) {
 //When they hit the button to load the playlist into the leftside
 function doLoadPlaylist(listid) {
 	//We only need to send the ID we want to copy over to the 'current' list
-	MyBox.Socket.emit('replaceCurrentList','{"withID" : "'+listid+'", "event" : "gotCurrentSongList"}');
+	MyBox.Socket.emit('replaceCurrentList','{"withID" : "'+listid+'"}');
 	return false;
 }
-function savingPlaylist(msg) {
+//Coming back with the list of playlist names so we can let them pick a name for the save.
+function gotPlaylistNames(msg) {
 	playlists=JSON.parse(msg);
-	if (playlists.errormsg) {
-		alert("Get Playlist list failed:"+playlists.errormsg);
-		return false;
-	}
 	var cnt=playlists.length;
 	var theRows="<div class='audioboxDivRowAlt'><input id='audioboxNewPlaylist' type='text' placeholder='New Playlist Name' value='' size='30'/><select id='audioboxOldPlaylists' onchange='pickedOld();'><option value='0'>--Choose--</option>";
 	for (i=0; i<cnt; i++) {
-		theRows+="<option value='"+playlists[i][0]+"'>"+playlists[i][0]+"</option>";
+		theRows+="<option value='"+playlists[i]+"'>"+playlists[i]+"</option>";
 	}
 	theRows+="</select><button id='audioboxSaveButton' class='small audioboxRight' onclick='doSavePlaylist();'>Save</button></div>";
 	document.getElementById("audioboxRightSide").innerHTML=theRows;
@@ -371,10 +363,11 @@ function doSavePlaylist() {
 	//That's all we need to send off to the server - it copies 'current' to the name.
 	//We don't bother sending anything back (we didn't change anything really)
 	MyBox.Socket.emit('saveCurrentList','{"named" : "'+listname+'"}');
+	document.getElementById("audioboxRightSide").innerHTML="<div class='audioboxDivRow'>&nbsp;</div>";
 	return false;
 }
 //We have just received a list of all the songs in the current playlist
-function gotSonglist(msg) {
+function gotCurrentSonglist(msg) {
 	var songlist=JSON.parse(msg);
 	if (songlist.errormsg) {
 		alert("Get list failed:"+songlist.errormsg);
@@ -388,26 +381,26 @@ function gotSonglist(msg) {
 	//      This is necessary because the playMe() is already in single quotes and needs the string in quotes to pass
 	var rowTemplate;
 	rowTemplate=
-		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;sl4ls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return deleteMe('psl0ls');'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext('psl0ls');'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
+		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;slFls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return deleteMe('psl0ls');'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext('psl0ls');'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
 		rowid='p'+songlist[i][0];	//Use playlist id as the data-dd we will use for this row
-		MyBox.Playlist[rowid]=[songlist[i][7],songlist[i][3],songlist[i][8],songlist[i][0]];
+		MyBox.Playlist[rowid]=[songlist[i][4],songlist[i][3],songlist[i][8],songlist[i][0]];
 		if ((i%2)==0) {
 			aRow=rowTemplate;
 		} else {
 			aRow=rowTemplate.replace(/audioboxDivRow/,"audioboxDivRowAlt");
 		}
 		aRow=aRow.replace(/slRls/g,'"'+rowid+'"');		//We put the ID on the row - the row will be the drop target - the name will be the drop source
-		aRow=aRow.replace(/sl0ls/g,songlist[i][9]);	//The song id
+		aRow=aRow.replace(/sl0ls/g,songlist[i][8]);	//The song id
 		aRow=aRow.replace(/sl1ls/g,songlist[i][1]);	//Artist
 		aRow=aRow.replace(/sl2ls/g,songlist[i][2]);	//Album
 		aRow=aRow.replace(/sl3ls/g,songlist[i][3]);	//Song Title
-		aRow=aRow.replace(/sl4ls/g,songlist[i][4]);	//Duration/time
-		//aRow=aRow.replace(/sl5ls/g,songlist[i][5]);	//Position in the playlist (unused)
-		//aRow=aRow.replace(/sl6ls/g,songlist[i][6]);	//Playlist name (unused)
-		//aRow.replace(/sl7ls/g,songlist[i][7]);	//Trackid
+		aRow=aRow.replace(/slFls/g,formatTimes(songlist[i][7]));	//Formatted Duration/time
+		//aRow=aRow.replace(/sl4ls/g,songlist[i][4]);	//Position in the playlist (unused)
+		//aRow=aRow.replace(/sl5ls/g,songlist[i][5]);	//Playlist name (unused)
+		//aRow.replace(/sl6ls/g,songlist[i][6]);	//Trackid
 		theRows+=aRow;
-		totaltime+=parseInt(songlist[i][8]);						//Add to total run time
+		totaltime+=parseInt(songlist[i][7]);						//Add to total run time
 	}
 	document.getElementById("audioboxPLTotal").innerHTML=formatTimes (totaltime);
 	//We add a 'dummy' row at the end so there is always something in the table, and they can add stuff to the end (since we add 'before' the row they drop on
@@ -456,7 +449,7 @@ function gotSonglist(msg) {
 				frominfo=MyBox.Playlist[objidx][3];
 			}
 			//beforethis,movethis,dothistype,event
-			MyBox.Socket.emit('updatePlaylist','{"dothistype" : "'+fromtype+'","beforethis" : "'+infrontof+'","movethis" : "'+frominfo+'","event" : "gotCurrentSongList"}');
+			MyBox.Socket.emit('updatePlaylist','{"dothistype" : "'+fromtype+'","beforethis" : "'+infrontof+'","movethis" : "'+frominfo+'"}');
 			return false;
 		});
 	}
@@ -484,27 +477,23 @@ function gotSonglist(msg) {
 }
 //Load the songs from the playlist into the right side to be reviewed (allow load of the whole playlist, or drag/drop songs)
 function getForReview(plid) {
-	MyBox.Socket.emit('getForReview','{"plid" : "'+plid+'","event" : "gotReviewPlaylist"}');
+	MyBox.Socket.emit('getForReview','{"plid" : "'+plid+'"}');
 	return false;
 }
 //Return from getting a list of songs from a playlist to review (handle these the same as we would from a 'search')
-function gotReviewPlaylist(msg) {
+function gotReviewList(msg) {
 	var songlist=JSON.parse(msg);
-	if (songlist.errormsg) {
-		alert("Get list failed:"+songlist.errormsg);
-		return false;
-	}
 	cnt=songlist.length;
-	theRows="";
+	theRows='';
 	MyBox.Searchlist={};	//Clear out the old search information
 	//NOTE: The id=slRls does not have quotes because it will be replaced by the ID in double quotes
 	//      This is necessary because the playMe() is already in single quotes and needs the string in quotes to pass
 	var rowTemplate=
-		"<div class='audioboxDivRow'><div class='audioboxSongR tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistR'>sl1ls</div><div class='audioboxInfoR'><ul class='button-bar audioboxRight'><li class='first last'><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;sl4ls</a></li></ul></div></div>";
+		"<div class='audioboxDivRow'><div class='audioboxSongR tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistR'>sl1ls</div><div class='audioboxInfoR'><ul class='button-bar audioboxRight'><li class='first last'><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;slFls</a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
 		rowid='s'+i;	//Use the index as the data-dd we will use for this row
 		//Trackid, title, playlisttracks id,runtime
-		MyBox.Searchlist[rowid]=[songlist[i][7],songlist[i][3],songlist[i][8]];
+		MyBox.Searchlist[rowid]=[songlist[i][6],songlist[i][3],songlist[i][7]];
 		if ((i%2)==0) {
 			aRow=rowTemplate;
 		} else {
@@ -515,10 +504,10 @@ function gotReviewPlaylist(msg) {
 		aRow=aRow.replace(/sl1ls/g,songlist[i][1]);	//Artist
 		aRow=aRow.replace(/sl2ls/g,songlist[i][2]);	//Album
 		aRow=aRow.replace(/sl3ls/g,songlist[i][3]);	//Song Title
-		aRow=aRow.replace(/sl4ls/g,songlist[i][4]);	//Duration/time
-		//aRow=aRow.replace(/sl5ls/g,songlist[i][5]);	//Position in the playlist (unused)
-		//aRow=aRow.replace(/sl6ls/g,songlist[i][6]);	//Playlist name (unused)
-		//aRow.replace(/sl7ls/g,songlist[i][7]);	//Trackid
+		aRow=aRow.replace(/slFls/g,formatTimes(songlist[i][7]));	//Formatted Duration/time
+		//aRow=aRow.replace(/sl4ls/g,songlist[i][4]);	//Position in the playlist (unused)
+		//aRow=aRow.replace(/sl5ls/g,songlist[i][5]);	//Playlist name (unused)
+		//aRow.replace(/sl6ls/g,songlist[i][6]);	//Trackid
 		theRows+=aRow;
 	}
 	document.getElementById("audioboxRightSide").innerHTML=theRows;
@@ -597,10 +586,10 @@ function toggleLocal() {
 function optionPicked() {
 	var opt=document.getElementById("audioboxlowuse").value;
 	if (opt=="empty") {
-		MyBox.Socket.emit('emptyCurrentList','{"event" : "gotCurrentSongList"}');
+		MyBox.Socket.emit('emptyCurrentList','');
 	}
 	if (opt=="random") {
-		MyBox.Socket.emit('randomList','{"event" : "gotCurrentSongList"}');
+		MyBox.Socket.emit('randomList','');
 	}
 	//Reset selection back to 'options'
 	document.getElementById("audioboxlowuse").selectedIndex=0; 
