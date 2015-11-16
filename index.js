@@ -12,7 +12,6 @@
 //* - Need to add 'mute' for volume control
 //* - Need to implement 'delete from current playlist'
 //* - Need to implement 'play me next'
-//* - Need to create a 'crate'
 //* - Need to be able to load the songs in a crate for review (just like Playlist)
 //* - Need to be able to select songs for review from a crate (pretty much the same as we do from a playlist)
 //* - Check to see if DB needs to be created, and do so if necessary
@@ -125,6 +124,10 @@ io.on('connection', function(socket) {
 	socket.on('adjustVolume',adjustVolume);
 	socket.on('doSkip',doSkip);
 	socket.on('randomList',randomList);
+	socket.on('createCrate',createCrate);
+	socket.on('getCrateForReview',getCrateForReview);
+	socket.on('getCratesList',getCratesList);
+	socket.on('getCratesListReview',getCratesListReview);
 	//Check to see if anything is currently playing
 	var songPlaying=audioboxDB.getCurrentStatus();
 	if (songPlaying!='*') {
@@ -192,6 +195,20 @@ function sendTelnet(cmd, callback) {
 		console.log("Not connected: "+cmd);
 		callback("*,0,*\n");
 	}
+}
+
+//Get the songs in a crate for review/browse
+function getCrateForReview(msg) {
+	console.log("getCrateForReview: "+msg);
+	var request=JSON.parse(msg);
+	audioboxDB.getCrateForReview(request);
+}
+
+//Create a new crate to be used to classify songs
+function createCrate(msg) {
+	console.log("createCrate: "+msg);
+	var request=JSON.parse(msg);
+	audioboxDB.createCrate(request);
 }
 
 //Create a new playlist with random songs
@@ -330,11 +347,15 @@ function cratesChanged(msg) {
 	audioboxDB.cratesChanged(request);
 }
 //When the browser wants the complete list of crates
-function getCratesList(msg) {
-    console.log('getCratesList: ' + msg);
-	var request=JSON.parse(msg);
+function getCratesList() {
+    console.log('getCratesList.');
     audioboxDB.getCratesList();
 }
+function getCratesListReview() {
+    console.log('getCratesListReview.');
+    audioboxDB.getCratesListReview();
+}
+
 //When the user changes the rating for the currently playing song
 function ratingChanged(msg) {
 	console.log('ratingChanged: '+msg);

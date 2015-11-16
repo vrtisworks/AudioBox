@@ -9,6 +9,7 @@ $( document ).ready(function() {
 	MyBox.Socket.on("songStopped",songStopped);					//When we are told LiquidSoap just started a song
 	MyBox.Socket.on("songCrates",songCrates);					//When we get the list of crates that the playing song is part of
 	MyBox.Socket.on("cratesList",gotCratesList);				//When we get the complete list of crates for the select list
+	MyBox.Socket.on("cratesListReview",gotCratesListReview);	//When we get the complete list of crates for review
 	MyBox.Socket.on("clearCurrentPlaying",clearCurrentPlaying);	//When the playlist is replaced, nothing is playing.
 	//Ask for the list of crates available
 	MyBox.Socket.emit("getCratesList",'');
@@ -266,11 +267,25 @@ function gotCratesList(msg) {
 	//The option VALUE is the crate ID.
 	// Option 0 is special - we will put the track id as the value for that option when a song starts playing
 	crates=JSON.parse(msg);
-	var options='<option value="0">--None--</option>';
+	//NOTE: It is possible that we will get a new set of crates while a song is currently playing.
+	//      So need to preserve the current selections.
+	var options=document.getElementById("audioboxcrates").options;
 	var i;
-	var cl=crates.length;
+	var cl=options.length;
+	var areSelected=[];
 	for (i=0; i<cl; i++) {
-		options+='<option value="'+crates[i][0]+'">'+crates[i][1]+'</option>';
+		if (options[i].selected) {
+			areSelected.push(options[i].value);
+		}
+	}	
+	cl=crates.length;
+	options='<option value="0">--None--</option>';
+	for (i=0; i<cl; i++) {
+		options+='<option ';
+		if (areSelected.indexOf(crates[i][0])>=0) {
+			options+="selected ";
+		}
+		options+='value="'+crates[i][0]+'">'+crates[i][1]+'</option>';
 	}
 	document.getElementById("audioboxcrates").innerHTML=options;
 	return false;
@@ -288,11 +303,6 @@ function checkForCR() {
 	return true;
 }
 
-//When they hit the Load Playlist button - we setup the option and request the list
-function loadPlaylist() {
-	MyBox.Socket.emit("getPlaylists",'');
-	return false;
-}
 //When they hit the Save Playlist button - we need to request the list of playlists so that they can choose an existing one
 function savePlaylist() {
 	MyBox.Socket.emit('getPlaylistNames','');
@@ -300,11 +310,7 @@ function savePlaylist() {
 }
 //Return from getting the list of playlists we currently have.
 function gotPlaylists(msg) {
-	playlists=JSON.parse(msg);
-	if (playlists.errormsg) {
-		alert("Get Playlist list failed:"+playlists.errormsg);
-		return false;
-	}
+	var playlists=JSON.parse(msg);
 	var cnt=playlists.length;
 	var theRows='';
 	var rowTemplate=
@@ -322,6 +328,28 @@ function gotPlaylists(msg) {
 	}
 	document.getElementById("audioboxRightSide").innerHTML=theRows;
 	return false;
+}
+//Return from getting the list of crates we current have
+function gotCratesListReview(msg) {
+	var crates=JSON.parse(msg);
+	var cnt=crates.length;
+	var theRows='';
+	//[rows[i].id, rows[i].name, rows[i].count]
+	var rowTemplate=
+		"<div class='audioboxDivRow'><div class='audioboxPLName'>cr0rc</div><div class='audioboxPLInfo'><ul class='button-bar audioboxRight'><li><a href='#' class='tooltip' title='Songs'>cr1rc</a></li><li><a href='#' class='tooltip' title='Review' onclick='return getCrateForReview(cr2rc)'><i class='fa fa-folder-open'></i> </a></li></ul></div></div>";
+	for (i=0; i<cnt; i++) {
+		if ((i%2)==0) {
+			aRow=rowTemplate;
+		} else {
+			aRow=rowTemplate.replace(/audioboxDivRow/,"audioboxDivRowAlt");
+		}
+		aRow=aRow.replace(/cr0rc/g,crates[i][1]);
+		aRow=aRow.replace(/cr1rc/g,crates[i][2]);
+		theRows+=aRow.replace(/cr2rc/g,crates[i][0]);
+	}
+	document.getElementById("audioboxRightSide").innerHTML=theRows;
+	return false;
+	
 }
 //When they hit the button to load the playlist into the leftside
 function doLoadPlaylist(listid) {
@@ -363,9 +391,38 @@ function doSavePlaylist() {
 	//That's all we need to send off to the server - it copies 'current' to the name.
 	//We don't bother sending anything back (we didn't change anything really)
 	MyBox.Socket.emit('saveCurrentList','{"named" : "'+listname+'"}');
+	//Clear out the save box so they don't try again.
 	document.getElementById("audioboxRightSide").innerHTML="<div class='audioboxDivRow'>&nbsp;</div>";
 	return false;
 }
+//When they ask to create a new Crate
+function createCrate() {
+	var theRow="<div class='audioboxDivRowAlt'><input id='audioboxNewCrate' type='text' placeholder='New Crate Name' value='' size='30'/><button class='small audioboxRight' onclick='doCreateCrate();'>Create</button></div>";
+	document.getElementById("audioboxRightSide").innerHTML=theRow;
+	return false;
+}
+//When they hit the save button after typing in new crate name...
+function doCreateCrate() {
+	//Get the name they entered.
+	var cratename=document.getElementById("audioboxNewCrate").value;
+	//They cannot create the same name twice
+	var checkOlds=document.getElementById("audioboxcrates").options;
+	var cnt=checkOlds.length;
+	for (i=0; i<cnt; i++) {
+		if (checkOlds[i].value==cratename) {
+			if (alert ("A crate named:"+checkOlds[i].value+" already exists")) {
+				return false;
+			}
+		}
+	}
+	//That's all we need to send off to the server.
+	//The server will send us a new set of crate names.
+	MyBox.Socket.emit('createCrate','{"named" : "'+cratename+'"}');
+	//Clear out the save box so they don't try again
+	document.getElementById("audioboxRightSide").innerHTML="<div class='audioboxDivRow'>&nbsp;</div>";
+	return false;
+}
+
 //We have just received a list of all the songs in the current playlist
 function gotCurrentSonglist(msg) {
 	var songlist=JSON.parse(msg);
@@ -474,6 +531,12 @@ function gotCurrentSonglist(msg) {
 	}
 
 	return false;
+}
+//Load the songs from the crate into the right side to be reviewed
+function getCrateForReview(cid) {
+	MyBox.Socket.emit('getCrateForReview','{"cid" : "'+cid+'"}');
+	return false;
+	
 }
 //Load the songs from the playlist into the right side to be reviewed (allow load of the whole playlist, or drag/drop songs)
 function getForReview(plid) {
@@ -586,10 +649,20 @@ function toggleLocal() {
 function optionPicked() {
 	var opt=document.getElementById("audioboxlowuse").value;
 	if (opt=="empty") {
-		MyBox.Socket.emit('emptyCurrentList','');
+		MyBox.Socket.emit("emptyCurrentList",'');
 	}
 	if (opt=="random") {
-		MyBox.Socket.emit('randomList','');
+		MyBox.Socket.emit("randomList",'');
+	}
+	if (opt=="list") {
+		MyBox.Socket.emit("getPlaylists",'');
+	}
+	if (opt=="create") {
+		//Call this to put up the save button, etc.
+		createCrate();
+	}
+	if (opt=="crates") {
+		MyBox.Socket.emit("getCratesListReview",'');
 	}
 	//Reset selection back to 'options'
 	document.getElementById("audioboxlowuse").selectedIndex=0; 

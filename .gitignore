@@ -8,3 +8,4 @@ db/**
 .fseventsd
 .Spotlight-V100
 
+*.njv

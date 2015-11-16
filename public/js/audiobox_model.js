@@ -116,6 +116,19 @@ function copyCurrent(toid) {
 		});
 	});
 }
+//Simply get a complete list of all the crates available - with the event as a parameter
+function getAllCrates(eventName) {
+	var sql="SELECT id, name, count FROM crates ORDER BY name";
+	db.all(sql,{},function(err,rows) {
+		var crates=Array();
+		var i;
+		var rl=rows.length;
+		for (i=0; i<rl; i++) {
+			crates.push([rows[i].id, rows[i].name, rows[i].count]);				
+		}
+		emitter.emit(eventName,JSON.stringify(crates));
+	});
+}
 
 
 /******************* Exported stuff follows ***********************/
@@ -123,7 +136,26 @@ module.exports = Audiobox_Model;
 function Audiobox_Model(emitter2use) {
 	emitter=emitter2use;
 }
+//Get the songs in a crate for review (basically the same 'data' as returned from search and playlist review
+function getCrateForReview(request) {
+    //NOTE: we 'fudge' up a select list which looks close to the one we get from a playlist so we can handle them
+	var sql="SELECT 0 AS id, artist, album, title, 0 AS position, 'Crate' AS name, library.id AS track_id, duration FROM library LEFT JOIN crate_tracks AS ct ON ct.track_id=library.id WHERE crate_id=?"
+	db.all(sql,[request.cid],function (err, tracks) {
+		var rtn=tracksobj2array(tracks);		//Crunch it into an array instead of an object
+		console.log("getCrateForReview: "+request.cid);
+		emitter.emit("gotReviewList",JSON.stringify(rtn));
+	});
+}
 
+//Create a new crate (and then send back the new complete list of crates
+function createCrate(request) {
+	var sql="INSERT INTO crates (name,count,show,locked,autodj_source) VALUES (?,0,1,0,0)";
+    db.run(sql,[request.named],function(result) {
+    	console.log("Created Crate ID: "+this.lastID+" named: "+request.named);
+    	//Now we can sent the browser the new set of crates.
+    	getCratesList();
+    });
+}
 //Setup is a seperate function, because you can't register an event handler until after the object is created.
 function setUp(callback) {
 	var sql='SELECT id FROM Playlists WHERE name="AUDIOBOX CURRENT"';
@@ -197,18 +229,13 @@ function getSongStarted(timeRemaining) {
 	//We don't need to wait for this to return.
 	getSongCrates(lines[1]);
 }
-//Simply get a complete list of all the crates available.
+//Simply get a complete list of all the crates available (event is cratesList)
 function getCratesList() {
-	var sql="SELECT id, name FROM crates ORDER BY name";
-	db.all(sql,{},function(err,rows) {
-		var crates=Array();
-		var i;
-		var rl=rows.length;
-		for (i=0; i<rl; i++) {
-			crates.push([rows[i].id, rows[i].name]);				
-		}
-		emitter.emit("cratesList",JSON.stringify(crates));
-	});
+	getAllCrates("cratesList");
+}
+//Simply get a complete list of all the crates available (event is cratesListReview)
+function getCratesListReview() {
+	getAllCrates("cratesListReview");
 }
 
 //Get the crates that a song is in.
@@ -650,3 +677,7 @@ Audiobox_Model.prototype.skipSong = skipSong;
 Audiobox_Model.prototype.setSongStarted = setSongStarted;
 Audiobox_Model.prototype.getNextSongFileName = getNextSongFileName;
 Audiobox_Model.prototype.getSongPlaying = getSongPlaying;
+Audiobox_Model.prototype.createCrate = createCrate;
+Audiobox_Model.prototype.getCrateForReview = getCrateForReview;
+Audiobox_Model.prototype.getCratesListReview = getCratesListReview;
+
