@@ -438,7 +438,7 @@ function gotCurrentSonglist(msg) {
 	//      This is necessary because the playMe() is already in single quotes and needs the string in quotes to pass
 	var rowTemplate;
 	rowTemplate=
-		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;slFls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return deleteMe('psl0ls');'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext('psl0ls');'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
+		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;slFls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return removeMe(slRls);'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext(slRls);'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
 		rowid='p'+songlist[i][0];	//Use playlist id as the data-dd we will use for this row
 		MyBox.Playlist[rowid]=[songlist[i][4],songlist[i][3],songlist[i][8],songlist[i][0]];
@@ -669,18 +669,10 @@ function optionPicked() {
     return false;
 }
 
-//Delete the song from the list
-function deleteMe(objidx) {
+//Remove the song from the list
+function removeMe(objidx) {
 	//The easy way to do this is just tell the server and get a new list
-	alert("Need to implement deleteMe");
-	/*
-	$.ajax ({
-    	dataType: 'json',
-        type: 'GET',
-        url: MyBox.SiteURL+"ajaxRemoveItem/"+MyBox.Playlist[objidx][3],
-        success: gotSonglist
-    });
-    */
+	MyBox.Socket.emit("removeFromList",'{"plid":"'+MyBox.Playlist[objidx][2]+'"}');
     return false;
 }
 //Make the song select the next one

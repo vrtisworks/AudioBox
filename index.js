@@ -12,8 +12,6 @@
 //* - Need to add 'mute' for volume control
 //* - Need to implement 'delete from current playlist'
 //* - Need to implement 'play me next'
-//* - Need to be able to load the songs in a crate for review (just like Playlist)
-//* - Need to be able to select songs for review from a crate (pretty much the same as we do from a playlist)
 //* - Check to see if DB needs to be created, and do so if necessary
 //* - Module to read ID3 information
 //* - need an option to play the list only once.
@@ -128,6 +126,7 @@ io.on('connection', function(socket) {
 	socket.on('getCrateForReview',getCrateForReview);
 	socket.on('getCratesList',getCratesList);
 	socket.on('getCratesListReview',getCratesListReview);
+	socket.on('removeFromList',removeFromList);
 	//Check to see if anything is currently playing
 	var songPlaying=audioboxDB.getCurrentStatus();
 	if (songPlaying!='*') {
@@ -196,7 +195,12 @@ function sendTelnet(cmd, callback) {
 		callback("*,0,*\n");
 	}
 }
-
+//Remove a song from the current playlist
+function removeFromList(msg) {
+	console.log("removeFromList: "+msg);
+	var request=JSON.parse(msg);
+	audioboxDB.removeFromList(request);
+}
 //Get the songs in a crate for review/browse
 function getCrateForReview(msg) {
 	console.log("getCrateForReview: "+msg);

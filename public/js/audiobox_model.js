@@ -136,6 +136,28 @@ module.exports = Audiobox_Model;
 function Audiobox_Model(emitter2use) {
 	emitter=emitter2use;
 }
+
+//Remove a song from the current playlist
+function removeFromList(request) {
+	//First, we need to find the entry in the current playlist
+	plinfo=splitSongId(request.plid);
+	plinfo.push(audioboxId);
+	var sql="SELECT position FROM PlaylistTracks WHERE id=? AND track_id=? AND playlist_id=?";
+	db.all(sql,plinfo,function(err, theone) {
+		//Should only get one (might not get any if two people remove quickly enough
+		if (theone.length=1) {
+			sql="DELETE FROM PlaylistTracks WHERE id=?";
+			db.run(sql,plinfo[0], function(result) {
+				console.log('Deleted entry: '+plinfo[0]+" : "+this.changes);
+				sql="UPDATE PlaylistTracks SET position=position-1 WHERE position>? AND playlist_id=?";
+				db.run(sql,[theone[0].position,audioboxId],function(result) {
+					console.log("Updated Position: "+this.changes);
+					getCurrentPlaylist("update");	//Return the new playlist to the browser.
+				});
+			});
+		}
+	});
+}
 //Get the songs in a crate for review (basically the same 'data' as returned from search and playlist review
 function getCrateForReview(request) {
     //NOTE: we 'fudge' up a select list which looks close to the one we get from a playlist so we can handle them
@@ -327,11 +349,10 @@ function getCurrentPlaylist(reason) {
 				};
 				findthis=songIdList[i];			//This is the one that we want to find to make the one after it 'next'
 				console.log("findthis: "+findthis+" nextSongIdx: "+nextSongIdx+" i: "+i);
-				console.log(songIdList);
 			}	
 			setNextSongIdx(findthis);			//Set the next song as appropriate
 			console.log("nextSongIdx: "+nextSongIdx+" oldPlId: "+findthis+" #tracks: "+songIdListCnt);
-			console.log(songIdList);
+			//console.log(songIdList);
 		}
 		var rtn=tracksobj2array(tracks);		//Crunch it into an array instead of an object
 		console.log("getCurrentPlayList: "+reason);
@@ -680,4 +701,5 @@ Audiobox_Model.prototype.getSongPlaying = getSongPlaying;
 Audiobox_Model.prototype.createCrate = createCrate;
 Audiobox_Model.prototype.getCrateForReview = getCrateForReview;
 Audiobox_Model.prototype.getCratesListReview = getCratesListReview;
+Audiobox_Model.prototype.removeFromList = removeFromList;
 
