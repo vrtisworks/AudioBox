@@ -10,7 +10,6 @@
 //* - BUG - if they delete the only song in a playlist, we need to 'destroy' the source or Liquidsoap will beat the system up asking
 //* - BUG - Really should html escape the titles etc.
 //* - Need to add 'mute' for volume control
-//* - Need to implement 'delete from current playlist'
 //* - Need to implement 'play me next'
 //* - Check to see if DB needs to be created, and do so if necessary
 //* - Module to read ID3 information
@@ -25,18 +24,10 @@ var io = require('socket.io')(http);
 var telnet = require('telnet-client');
 var telnetconnection = new telnet();
 var telnetconnected=false;
-/*
-//These are the callbacks from the browser for when we get information from Liquidsoap
-var songCallbacks={
-	listevent : "gotCurrentSongList",
-	songevent : "songStarted",
-	crateevent : "songCrates",
-	clearcurrentevent : "clearCurrentPlaying",
-	errorevent : "gotAnError"};
-*/
 
 var telnetparms = {
   host: '192.168.0.112',			//Change to localhost/127.0.0.1 later
+//  host: '192.168.0.140',			//Change to localhost/127.0.0.1 later
   port: 1234,
   shellPrompt: 'END',
   echoLines: 0,
