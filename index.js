@@ -6,15 +6,21 @@
 // 3) Wait for browser to connect.
 
 //ToDo:
-//* - BUG - don't let them try to start playing if the playlist is empty
-//* - BUG - if they delete the only song in a playlist, we need to 'destroy' the source or Liquidsoap will beat the system up asking
-//* - BUG - Really should html escape the titles etc.
+//*$ - BUG - don't let them try to start playing if the playlist is empty
+//*$ - BUG - if they delete the only song in a playlist, we need to 'stop' the source or Liquidsoap will beat the system up asking
+//*$ - BUG - Really should html escape the titles etc.
+//*$ - BUG - Create Playlist was trying to write extra dates..
 //* - Need to add 'mute' for volume control
-//* - Need to implement 'play me next'
-//* - Check to see if DB needs to be created, and do so if necessary
-//* - Module to read ID3 information
+//* - Check to see if DB needs to be created
+//*$ - Module to read ID3 information
 //* - need an option to play the list only once.
 //* - need an option to play everything locally (this is not a simple change though)
+//*$ - Change rating to display all the choices (don't bother with dropdown)
+//*$ - Open rating to the left of the button (No-can only set top/left; and it doesn't look good to the left anyway)
+//* - Display the 'source' of the current playlist, along with the date/time stamp and modified flag.a
+//* - When playing, add hover showing the artist and album
+//* - Expand hover text to include date added for songs
+//* - Expand hover text to include date added for playlists
 
 var express=require('express');
 var app = express();
@@ -118,6 +124,7 @@ io.on('connection', function(socket) {
 	socket.on('getCratesList',getCratesList);
 	socket.on('getCratesListReview',getCratesListReview);
 	socket.on('removeFromList',removeFromList);
+	socket.on('meNext',meNext);
 	//Check to see if anything is currently playing
 	var songPlaying=audioboxDB.getCurrentStatus();
 	if (songPlaying!='*') {
@@ -192,6 +199,12 @@ function removeFromList(msg) {
 	var request=JSON.parse(msg);
 	audioboxDB.removeFromList(request);
 }
+//Make the requested entry in the playlist the next song to play
+function meNext(msg) {
+	console.log("meNext: "+msg);
+	var request=JSON.parse(msg);
+	audioboxDB.meNext(request);
+}
 //Get the songs in a crate for review/browse
 function getCrateForReview(msg) {
 	console.log("getCrateForReview: "+msg);
@@ -211,7 +224,10 @@ function randomList() {
 	console.log("randomList.");
 	//Tell the browser that nothing is playing now
 	io.emit("clearCurrentPlaying",'');
-	audioboxDB.makeRandomPlaylist();
+    sendTelnet("audiobox.stop", function (ignore) {
+    	audioboxDB.setSongPlaying("*", "");
+		audioboxDB.makeRandomPlaylist();
+	});
 }
 
 //Skip forward or backward
@@ -381,6 +397,7 @@ function emptyCurrentList() {
     console.log('emptyCurrentList.');
 	//Tell the browser that nothing is playing now
 	io.emit("clearCurrentPlaying",'');
+	//And tell LS to stop playing anything.
     sendTelnet("audiobox.stop", function (ignore) {
     	audioboxDB.setSongPlaying("*", "");
     	audioboxDB.emptyCurrentList();

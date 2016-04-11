@@ -6,10 +6,15 @@
 // songCrates(crate list) - This is the list of crates that a particular track is in (normally it's the currently playing track)
 // cratesList(all crates) - Returns a list of all the available crates
 // gotReviewList(song list) - Songs from either search or playlist review
+// gotAnError(error message) - General event when I have some error to send back to the browser
+// startStop('stop') - When I need to tell LS to stop playing (generally because I don't have a song to play)
+// gotCurrentSongList - When I want to return the current song list
+// gotPlayLists(playlist list) - When I return the list of playlists available
+// gotPlayListNames(name list) - Returns a simple list of the playlist names so browser can grandmother on save.
 
 var sqlite3 = require('sqlite3').verbose();
 
-var db = new sqlite3.Database('./db/mixxxdb.sqlite',sqlite3.OPEN_READWRITE);
+var db = new sqlite3.Database('./db/audioboxdb.sqlite',sqlite3.OPEN_READWRITE);
 var audioboxId;				//This is the 'AUDIOBOX' playlist id
 var nextSongIdx=0;			//The index to the next song to play in songIdList
 var songPlaying=["*",""];	//[0]=current playing status (*=never started, r=running, p=paused)
@@ -56,6 +61,7 @@ function tracksobj2array(tracks) {
 		arow[6]=atrack.track_id;
 		arow[7]=atrack.duration;
 		arow[8]=getSongId(atrack);
+		arow[9]=atrack.added_time;
 		rtn.push(arow);
 	}
 	return rtn;
@@ -77,12 +83,12 @@ function collectRandomSongs(libInfo, callback) {
 			//If we don't have 'many'... then we will give sqlite a larger range.
 			endat=libInfo.maxid;
 		}
-		var sql="SELECT id FROM library WHERE id>=? AND id<+? AND  timesplayed=0 LIMIT 1";
+		var sql="SELECT id FROM Library WHERE id>=? AND id<+? AND  times_played=0 LIMIT 1";
 		console.log("Trying: "+startat+" - "+endat);
 		db.all(sql,[startat,endat], function(err,rows) {
 			//NOTE: purists might argue that this isn't 'truly' random - but it's close enough for what we are doing
 			if (rows.length==1) {
-				sql="INSERT INTO PlaylistTracks (playlist_id, track_id, position) VALUES (?, ?, ?)"; 
+				sql="INSERT INTO Playlist_Tracks (playlist_id, track_id, position) VALUES (?, ?, ?)"; 
 				db.run(sql,[audioboxId,rows[0].id,libInfo.collected+1],function(result) {
     				console.log("Random Track Insert: "+this.lastID+" > "+rows[0].id);
     				libInfo.collected++;
@@ -98,7 +104,7 @@ function collectRandomSongs(libInfo, callback) {
 //Create a new playlist entry
 function createPlaylist(listname, hidden, callback) {
     //This is a super uggly insert/select, but it avoids a ton of callbacks.  And we won't be doing this much
-    var sql="INSERT INTO Playlists (name, position, hidden, date_created, date_modified) SELECT ?,max(position)+1,?,datetime('now'),datetime('now') FROM Playlists";
+    var sql="INSERT INTO Playlists (name, position, date_modified) SELECT ?,max(position)+1,?,datetime('now') FROM Playlists";
     db.run(sql,[listname, hidden],function(result) {
     	console.log("Created List ID: "+this.lastID+" named: "+listname);
     	callback(this.lastID);
@@ -108,9 +114,9 @@ function createPlaylist(listname, hidden, callback) {
 function copyCurrent(toid) {
 	db.serialize(function() {
 		//First we delete all the track from the 'to' list
-		var sql='DELETE FROM PlaylistTracks WHERE playlist_id=?';
+		var sql='DELETE FROM Playlist_Tracks WHERE playlist_id=?';
 		db.run(sql,[toid]);
-		sql='INSERT INTO PlaylistTracks (playlist_id, track_id, position) SELECT ?,track_id, position FROM PlaylistTracks WHERE playlist_id=?';
+		sql='INSERT INTO Playlist_Tracks (playlist_id, track_id, position) SELECT ?,track_id, position FROM Playlist_Tracks WHERE playlist_id=?';
 		db.run(sql,[toid,audioboxId], function(result) {;
 			console.log('Copied from: '+audioboxId+' to: '+toid);
 		});
@@ -118,13 +124,14 @@ function copyCurrent(toid) {
 }
 //Simply get a complete list of all the crates available - with the event as a parameter
 function getAllCrates(eventName) {
-	var sql="SELECT id, name, count FROM crates ORDER BY name";
+	var sql="SELECT C.*, SUM(CASE WHEN CT.crate_id IS NULL THEN 0 ELSE 1 END) AS track_count FROM Crates AS C LEFT JOIN Crate_Tracks AS CT ON C.id=CT.crate_id GROUP BY C.id ORDER BY name";
+	//var sql="SELECT id, name FROM Crates ORDER BY name";
 	db.all(sql,{},function(err,rows) {
 		var crates=Array();
 		var i;
 		var rl=rows.length;
 		for (i=0; i<rl; i++) {
-			crates.push([rows[i].id, rows[i].name, rows[i].count]);				
+			crates.push([rows[i].id, rows[i].name,rows[i].track_count]);				
 		}
 		emitter.emit(eventName,JSON.stringify(crates));
 	});
@@ -136,32 +143,45 @@ module.exports = Audiobox_Model;
 function Audiobox_Model(emitter2use) {
 	emitter=emitter2use;
 }
-
 //Remove a song from the current playlist
 function removeFromList(request) {
 	//First, we need to find the entry in the current playlist
 	plinfo=splitSongId(request.plid);
 	plinfo.push(audioboxId);
-	var sql="SELECT position FROM PlaylistTracks WHERE id=? AND track_id=? AND playlist_id=?";
+	var sql="SELECT position FROM Playlist_Tracks WHERE id=? AND track_id=? AND playlist_id=?";
 	db.all(sql,plinfo,function(err, theone) {
 		//Should only get one (might not get any if two people remove quickly enough
 		if (theone.length=1) {
-			sql="DELETE FROM PlaylistTracks WHERE id=?";
+			sql="DELETE FROM Playlist_Tracks WHERE id=?";
 			db.run(sql,plinfo[0], function(result) {
 				console.log('Deleted entry: '+plinfo[0]+" : "+this.changes);
-				sql="UPDATE PlaylistTracks SET position=position-1 WHERE position>? AND playlist_id=?";
+				sql="UPDATE Playlist_Tracks SET position=position-1 WHERE position>? AND playlist_id=?";
 				db.run(sql,[theone[0].position,audioboxId],function(result) {
 					console.log("Updated Position: "+this.changes);
-					getCurrentPlaylist("update");	//Return the new playlist to the browser.
+					getCurrentPlaylist("remove");	//Return the new playlist to the browser.
 				});
 			});
 		}
 	});
 }
+//Make the requested song the 'next' one in the list.
+function meNext(request) {
+	//First we need to find the entry
+	plinfo=splitSongId(request.plid);
+	//var thisPlId=songIdList[nextSongIdx];
+	ridx=songIdList.indexOf(request.plid);
+	if (ridx==0) {
+		//Can't find it in list (probably somebody else changed the list under us
+		emitter.emit("gotAnError",'{"error":"Cannot make "+request.plid)+" next."}');
+	} else {
+		//This will set things up so that when LS requests the next song.. we get the on requested.
+		nextSongIdx=ridx;
+	}
+}
 //Get the songs in a crate for review (basically the same 'data' as returned from search and playlist review
 function getCrateForReview(request) {
     //NOTE: we 'fudge' up a select list which looks close to the one we get from a playlist so we can handle them
-	var sql="SELECT 0 AS id, artist, album, title, 0 AS position, 'Crate' AS name, library.id AS track_id, duration FROM library LEFT JOIN crate_tracks AS ct ON ct.track_id=library.id WHERE crate_id=?"
+	var sql="SELECT 0 AS id, artist, album, title, 0 AS position, 'Crate' AS name, Library.id AS track_id, duration, added_time FROM Library LEFT JOIN Crate_Tracks AS ct ON ct.track_id=Library.id WHERE crate_id=?"
 	db.all(sql,[request.cid],function (err, tracks) {
 		var rtn=tracksobj2array(tracks);		//Crunch it into an array instead of an object
 		console.log("getCrateForReview: "+request.cid);
@@ -171,7 +191,7 @@ function getCrateForReview(request) {
 
 //Create a new crate (and then send back the new complete list of crates
 function createCrate(request) {
-	var sql="INSERT INTO crates (name,count,show,locked,autodj_source) VALUES (?,0,1,0,0)";
+	var sql="INSERT INTO Crates (name) VALUES (?)";
     db.run(sql,[request.named],function(result) {
     	console.log("Created Crate ID: "+this.lastID+" named: "+request.named);
     	//Now we can sent the browser the new set of crates.
@@ -191,7 +211,7 @@ function setUp(callback) {
 			audioboxId=row.id;
 			console.log('Audiobox Playlist ID: '+audioboxId);
 			//We also need to get the list of tracks in case LiquidSoap is already playing something
-			sql='SELECT id, track_id FROM PlaylistTracks WHERE playlist_id=? ORDER BY position';
+			sql='SELECT id, track_id FROM Playlist_Tracks WHERE playlist_id=? ORDER BY position';
 			db.all(sql,audioboxId, function(err,rows) {
 				saveSongIds(rows);			//Save all the Ids
 				setNextSongIdx("*");			//Set to beginning of list
@@ -229,11 +249,11 @@ function setSongPlaying(status, playingSongId) {
 //      ALSO.. if request.remaining >0, then we will use that instead of from the track table because the song has already started
 function getSongStarted(timeRemaining) {
 	var lines=splitSongId(songPlaying[1]);		//We use the track_id, not the playlisttrack id
- 	var sql="SELECT title, duration, id AS track_id, rating, artist FROM library WHERE id=?";   	
+ 	var sql="SELECT title, duration, id AS track_id, rating, artist FROM Library WHERE id=?";   	
 	db.get(sql,lines[1],function(err, row) {
 		if (row=='undefined') {
-			console.log("Not in Playlist: "+songPlaying[1]);
-			emitter.emit("gotAnError",'{"err":"Not in Playlist:'+songPlaying[1]+'"}');
+			console.log("Not in Library: "+songPlaying[1]);
+			emitter.emit("gotAnError",'{"err":"Not in Library:'+songPlaying[1]+'"}');
 			return;
 		}
     	console.log("Now Playing: "+row.title+" ("+row.duration+")");
@@ -249,7 +269,7 @@ function getSongStarted(timeRemaining) {
     });
 	//And we need to tell the browser what crates this song is currently in
 	//We don't need to wait for this to return.
-	getSongCrates(lines[1]);
+	getSongCrates({track_id:lines[1]});
 }
 //Simply get a complete list of all the crates available (event is cratesList)
 function getCratesList() {
@@ -261,15 +281,15 @@ function getCratesListReview() {
 }
 
 //Get the crates that a song is in.
-function getSongCrates(trackId) {
-	var sql="SELECT id FROM crate_tracks LEFT JOIN crates ON id=crate_id WHERE track_id=?";
-	db.all(sql,[trackId],function(err,rows) {
+function getSongCrates(request) {
+	var sql="SELECT crate_id FROM Crate_Tracks WHERE track_id=?";
+	db.all(sql,[request.track_id],function(err,rows) {
 		//The first entry is the track id
-		var crates=[trackId];
+		var crates=[request.track_id];
 		var i;
 		var rl=rows.length;
 		for (i=0; i<rl; i++) {
-			crates.push(rows[i].id);
+			crates.push(rows[i].crate_id);
 		}
 		console.log("Sending Crates: "+JSON.stringify(crates));
 		emitter.emit("songCrates",JSON.stringify(crates));
@@ -279,7 +299,7 @@ function getSongCrates(trackId) {
 function cratesChanged(request) {
 	//So, the first thing we need to do is determine where it is currently referenced.
 	var track_id=request.shift();			//The track_id is the first entry in the array, then the crate id's that were selected
-	var sql="SELECT id FROM crate_tracks LEFT JOIN crates ON id=crate_id WHERE track_id=?";
+	var sql="SELECT id FROM Crate_Tracks LEFT JOIN Crates ON id=crate_id WHERE track_id=?";
 	db.all(sql,[track_id],function(err,rows) {
 	    //If it is in the new set, and the old set, then we don't need to do anything.
 	    //If it is in the old only, we need to delete it from crate_tracks and decrement the count in crates.
@@ -288,38 +308,48 @@ function cratesChanged(request) {
 	    var idx;
 	    var cnt=rows.length;
 	    //Loop through all the ones it is currently in
+	    var deleteIn='';
 	    for (i=0; i<cnt; i++) {
 	    	//See if it is present in both the selected list, and the current list
 	    	idx=request.indexOf(rows[i].id);
 	    	if (idx<0) {
 	    		//No.. it WAS present, but was NOT selected
-	    		//We need to delete it from the crate_tracks, and decrement the count in crates.
-	    		sql="DELETE FROM crate_tracks WHERE crate_id=? AND track_id=?";
-	    		db.run(sql,[rows[i].id,track_id],function(result) {
-	    			console.log("Crate Track Delete: "+this.changes+" @ "+track_id);
-	    		});
-	    		sql="UPDATE crates SET count=count-1 WHERE id=?";
-	    		db.run(sql,[rows[i].id],function(result) {
-	    			console.log("Crate Decrement: "+this.changes+" @ "+track_id);
-	    		});
+	    		//We need to delete it from the crate_tracks
+	    		if (deleteIn.length>0) {
+	    			deleteIn+=',';
+	    		}
+	    		deleteIn+=rows[i].id;
 	    		//We don't need to remove it from request, since it wasn't in there.
 	    	} else {
 	    		//It is in both places, so all we need to do is remove it from request as we have 'handled' it
 	    		request.splice(idx,1);
 	    	}	    			
 	    }
+	    if (deleteIn.length>0) {
+	    	sql="DELETE FROM Crate_Tracks WHERE track_id=? AND crate_id IN ("+deleteIn+')';
+	    	db.run(sql,[track_id],function(result) {
+	    		console.log("Crate Track Delete: "+this.changes+" @ "+track_id);
+	    	});
+	    }
 	    //Anything left in request has to be added
+	    //We need to build up multiple inserts.  SQLITE can't handle the multiple rows in an insert.
 	    cnt=request.length;
+	    sql='';
 	    for (i=0; i<cnt; i++) {
 	    	//Insert it into the tracks table
-	    	sql="INSERT INTO crate_tracks (crate_id, track_id) VALUES (?,?)";
-	    	db.run(sql,[request[i],track_id],function(result) {
-	    		console.log("Crate Track Insert: "+this.lastID+" @ "+track_id);
-	    	});
-	    	//And increment the count of how many there are.
-	    	sql="UPDATE crates SET count=count+1 WHERE id=?";
-	    	db.run(sql,[request[i]],function(result) {
-	    		console.log("Crate Increment: "+this.changes+" @ "+track_id);
+	    	//If we already have one, we need to put semicolons in.
+	    	if (sql.length>0) {
+	    		sql+=';';
+	    	}
+	    	sql+="INSERT INTO Crate_Tracks (crate_id, track_id) VALUES ("+request[i]+','+track_id+')';
+	    }
+	    if (sql.length>0) {
+	    	db.exec(sql,function(err) {
+	    		console.log("Crate Track Insert.")
+	    		console.log(sql);
+	    		if (err) {
+	    			console.log(err);
+	    		}
 	    	});
 	    }
 	});
@@ -334,7 +364,7 @@ function ratingChanged(request) {
 	
 //This gets all the songs in the 'current' playlist (useful after a reposition, delete, or drop)
 function getCurrentPlaylist(reason) {
-    var sql="SELECT  plt.id, l.artist, l.album, l.title, plt.position, pl.name, plt.track_id, l.duration FROM library AS l LEFT JOIN PlaylistTracks AS plt ON plt.track_id=l.id LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id=? ORDER BY plt.position, plt.id";
+    var sql="SELECT  plt.id, l.artist, l.album, l.title, plt.position, pl.name, plt.track_id, l.duration, l.added_time FROM Library AS l LEFT JOIN Playlist_Tracks AS plt ON plt.track_id=l.id LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id=? ORDER BY plt.position, plt.id";
     var i;
 	db.all(sql,[audioboxId],function (err, tracks) {
 		//We want to update the information about the tracks in it depending on why we got here.
@@ -353,6 +383,13 @@ function getCurrentPlaylist(reason) {
 			setNextSongIdx(findthis);			//Set the next song as appropriate
 			console.log("nextSongIdx: "+nextSongIdx+" oldPlId: "+findthis+" #tracks: "+songIdListCnt);
 			//console.log(songIdList);
+			if (reason=="remove" && songIdListCnt==0) {
+				//If we removed the last song, we need to stop the player...
+				console.log("Removed last song from the current playlist.");
+				//This will have the server (me) issue the stop to LS
+				emitter.emit("startStop",'{"makeit":"stop"}');
+				//I wouldn't consider this an 'error', so we don't send that kind of message back to browers.
+			}
 		}
 		var rtn=tracksobj2array(tracks);		//Crunch it into an array instead of an object
 		console.log("getCurrentPlayList: "+reason);
@@ -361,7 +398,7 @@ function getCurrentPlaylist(reason) {
 }
 //Getting a playlist to review it instead of making it the 'current' playlist
 function getForReview(request) {
-    var sql="SELECT  plt.id, l.artist, l.album, l.title, plt.position, pl.name, plt.track_id, l.duration FROM library AS l LEFT JOIN PlaylistTracks AS plt ON plt.track_id=l.id LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id=? ORDER BY plt.position, plt.id";
+    var sql="SELECT  plt.id, l.artist, l.album, l.title, plt.position, pl.name, plt.track_id, l.duration FROM Library AS l LEFT JOIN Playlist_Tracks AS plt ON plt.track_id=l.id LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id=? ORDER BY plt.position, plt.id";
     var i;
 	db.all(sql,[request.plid],function (err, tracks) {
 		var rtn=tracksobj2array(tracks);		//Crunch it into an array instead of an object
@@ -377,13 +414,13 @@ function getCurrentStatus() {
 //Create a playlist of 25(?) random songs
 function makeRandomPlaylist() {
 	//First we empty out all the tracks from the AUDIOBOX playlist
-	var sql="DELETE FROM PlaylistTracks WHERE playlist_id=?";
+	var sql="DELETE FROM Playlist_Tracks WHERE playlist_id=?";
 	db.run(sql,[audioboxId],function(result) {
 		console.log("Random - Delete done: "+this.changes);
 		songIdListCnt=0;		//Clean out our table
 		songIdList=[];
 		//This is an 'expensive' query (it will scan the whole library), so we only do it once
-		sql="SELECT MAX(id) AS maxid, COUNT(id) AS available FROM library WHERE timesplayed=0";
+		sql="SELECT MAX(id) AS maxid, COUNT(id) AS available FROM Library WHERE times_played=0";
 		db.all(sql,[],function(err,rows) {
 			//available/maxid is 'sort of' the percentage of unplayed songs we have
 			rows[0].availratio=rows[0].available/rows[0].maxid;
@@ -398,8 +435,9 @@ function makeRandomPlaylist() {
 	});
 }
 //Empties the current playlist of all tracks - it does not 'delete' it.
+//Server takes care of telling LS to stop.
 function emptyCurrentList() {
-    var sql="DELETE FROM PlaylistTracks WHERE playlist_id=?";
+    var sql="DELETE FROM Playlist_Tracks WHERE playlist_id=?";
     db.run(sql,[audioboxId],function (result) {
     	//Once the delete finishes, we just return the now empty current playlist
     	getCurrentPlaylist("empty");
@@ -407,8 +445,8 @@ function emptyCurrentList() {
 }
 //Get the list of 'visiable' playlists and information about how many songs are in them
 function getPlaylists() {
-	var sql='SELECT  pl.name, count(l.id) AS nbr_tracks, sum(l.duration) AS run_time, pl.id FROM library AS l LEFT JOIN PlaylistTracks AS plt ON plt.track_id=l.id LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE hidden!=2 GROUP BY name ORDER BY name';
-	db.all(sql,{},function (err, playlists) {
+	var sql='SELECT  pl.name, count(l.id) AS nbr_tracks, sum(l.duration) AS run_time, pl.id, pl.date_modified FROM Library AS l LEFT JOIN Playlist_Tracks AS plt ON plt.track_id=l.id LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id <> ? GROUP BY name ORDER BY name';
+	db.all(sql,[audioboxId],function (err, playlists) {
 		var i;
 		var pl=playlists.length;
 		var rtn=[];
@@ -419,6 +457,7 @@ function getPlaylists() {
 			arow[1]=aplaylist.nbr_tracks;
 			arow[2]=aplaylist.run_time;
 			arow[3]=aplaylist.id;
+			arow[4]=aplaylist.date_modified;
 			rtn.push(arow);
 		}
 		emitter.emit("gotPlaylists",JSON.stringify(rtn));
@@ -461,7 +500,7 @@ function doSearch(request) {
 		//Just return an empty list
 	}
     //NOTE: we 'fudge' up a select list which looks close to the one we get from a playlist so we can handle them
-	var sql="SELECT 0 AS id, artist, album, title, 0 AS position, 'Search' AS name, library.id AS track_id, duration FROM library WHERE ";
+	var sql="SELECT 0 AS id, artist, album, title, 0 AS position, 'Search' AS name, Library.id AS track_id, duration, added_time FROM Library WHERE ";
 	//We first query for the full term in the field, then we will do the individual words
 	db.all(sql+request.type+" LIKE ? ORDER BY "+request.type,["%"+fullterm+"%"],function (err, fulllist) {
 		var rtn=tracksobj2array(fulllist);	//We will at least return this much...
@@ -520,11 +559,11 @@ function updatePlaylist(request) {
     var param;
     if (request.beforethis=='atEnd') {
     	//If we want to move it 'before the end', we need to find the current max position (which might be NULL if the list is empty)
-    	sql="SELECT MAX(position) AS position FROM PlaylistTracks WHERE playlist_id=?";
+    	sql="SELECT MAX(position) AS position FROM Playlist_Tracks WHERE playlist_id=?";
     	param=audioboxId;
     } else {    	
     	//Otherwise, we are going to need the position of where we are moving to
-	    sql="SELECT position FROM PlaylistTracks WHERE id=?";
+	    sql="SELECT position FROM Playlist_Tracks WHERE id=?";
 	    param=request.beforethis;
 	}
 	db.get(sql,param,function(err, row) {
@@ -543,12 +582,12 @@ function updatePlaylist(request) {
 					before++;
 				} else {
 					//If we aren't inserting at the end, we need to slide everything 'down'
-					sql="UPDATE PlaylistTracks SET position=position+1 WHERE playlist_id=? AND position>=?";
+					sql="UPDATE Playlist_Tracks SET position=position+1 WHERE playlist_id=? AND position>=?";
 					db.run(sql,[audioboxId,before],function(res) {
 						console.log("S - After positions update:"+this.changes);						
 					});
 				}				
-				var sql="INSERT INTO PlaylistTracks (playlist_id, track_id, position) VALUES (?, ?, ?)";
+				var sql="INSERT INTO Playlist_Tracks (playlist_id, track_id, position) VALUES (?, ?, ?)";
 				db.run(sql,[audioboxId,request.movethis,before],function (res) {
 					console.log("S - After insert item:"+this.lastID);
 					getCurrentPlaylist("update");
@@ -556,7 +595,7 @@ function updatePlaylist(request) {
 			});
 		} else {
 			//If we are moving within the list, we need to know the position of the one we are moving
-	    	var sql="SELECT position FROM PlaylistTracks WHERE id=?";
+	    	var sql="SELECT position FROM Playlist_Tracks WHERE id=?";
 	    	db.get(sql,request.movethis, function (err, row) {
 	    		var move=parseInt(row.position);
 	    		console.log('Moving ID: '+move);
@@ -566,15 +605,15 @@ function updatePlaylist(request) {
 		    		var parm
 					if (request.beforethis=='atEnd') {
 						//If we are adding to the end, then we need to move everything 'up'
-						sql="UPDATE PlaylistTracks SET position=position-1 WHERE position>? AND playlist_id=?";
+						sql="UPDATE Playlist_Tracks SET position=position-1 WHERE position>? AND playlist_id=?";
 						parm=[move,audioboxId];
 					} else if (before<move) {
 						//We are moving 'up', so we need to move everything 'down' to make room
-						sql="UPDATE PlaylistTracks SET position=position+1 WHERE position >=? AND position<? AND playlist_id=?";
+						sql="UPDATE Playlist_Tracks SET position=position+1 WHERE position >=? AND position<? AND playlist_id=?";
 						parm=[before,move,audioboxId];
 					} else {
 						//We are moving 'down', so we need to slide everything up to make room
-						sql="UPDATE PlaylistTracks SET position=position-1 WHERE position >? AND position<? AND playlist_id=?";
+						sql="UPDATE Playlist_Tracks SET position=position-1 WHERE position >? AND position<? AND playlist_id=?";
 						parm=[move,before,audioboxId];
 						//NOTE: We decrement before AFTER we create the parms, because it will now be what we want to make the new entry
 						before--;
@@ -584,7 +623,7 @@ function updatePlaylist(request) {
 						console.log("P - After positions update:"+this.changes);						
 					});
 					//And we always need to update the position of the one we are moving
-					var sql="UPDATE PlaylistTracks SET position=? WHERE id=?";
+					var sql="UPDATE Playlist_Tracks SET position=? WHERE id=?";
 					db.run(sql,[before,request.movethis],function(res) {
 						console.log("P - After update moved item:"+this.changes);
 						getCurrentPlaylist("update");							
@@ -600,12 +639,12 @@ function replaceCurrentList(request) {
     db.serialize(function() {
 		var theid=request.withID;
 		//Clear out all the tracks from the 'current' playlist
-		var sql="DELETE FROM PlaylistTracks WHERE playlist_id=?";
+		var sql="DELETE FROM Playlist_Tracks WHERE playlist_id=?";
 		db.run(sql,audioboxId);
 		//Get the tracks and positions from the requested playlist and insert them into the AUDIOBOX playlist
-    	sql='INSERT INTO PlaylistTracks (playlist_id, track_id, position) SELECT '+
+    	sql='INSERT INTO Playlist_Tracks (playlist_id, track_id, position) SELECT '+
     		audioboxId+
-    		',plt.track_id, plt.position FROM PlaylistTracks AS plt LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id=?';
+    		',plt.track_id, plt.position FROM Playlist_Tracks AS plt LEFT JOIN Playlists AS pl ON plt.playlist_id=pl.id WHERE pl.id=?';
     	db.run(sql, theid, function(result) {
 			getCurrentPlaylist("replace");
     	});
@@ -615,13 +654,12 @@ function replaceCurrentList(request) {
 //NOTE: This is called when the browser changes the 'scr' for the audio element
 //      so we send the file back (via the controller), and to not emit anything unless we can't find the track
 function getTrackFileLocation(thisTrack,callback) {
-    var sql="SELECT tl.location FROM library AS lib LEFT JOIN track_locations AS tl ON lib.location=tl.id WHERE lib.id=?";
+    var sql="SELECT filename,directory FROM Library WHERE id=?";
 	db.get(sql,thisTrack, function(err,row) {
 		if (typeof row != 'undefined') {
-    		var filename=row.location.replace("D:/RealMusic/","/mnt/remotemusic/");
+    		var filename=row.directory.replace("D:/music/RealMusic/","/mnt/remotemusic/")+'/'+row.filename;
 			callback(filename);
 		} else {
-			console.log('Missing Track Location: '+thisTrack);
 			emitter.emit("gotAnError",'{"err":"Missing Track Location: '+thisTrack+'"}');
 			callback('');
 		}
@@ -647,20 +685,29 @@ function setSongStarted (theSongId) {
 	setSongPlaying('r',theSongId);
 	var songParts=splitSongId(theSongId);
 	//I don't need to worry about exactly when this gets completed.
-    var sql="UPDATE library SET timesplayed=timesplayed+1 WHERE id=?";
+    var sql="UPDATE Library SET times_played=times_played+1 WHERE id=?";
     db.run(sql,[songParts[0]],function(result) {
     	console.log("Timesplayed Done: "+this.changes);
     });
 }
 //Liquidsoap will call this to get the next song to play.
 function getNextSongFileName(express_res) {
-    var thisPlId=songIdList[nextSongIdx]
+    var thisPlId=songIdList[nextSongIdx];
+	if (thisPlId==undefined || songIdListCnt==0) {
+		//Not good.. we don't have a song to give.. better tell LS to stop
+		console.log("getNextSongFileName: FAILED."+" : "+songIdListCnt+" : "+nextSongIdx);
+		//This will have the server (me) issue the stop to LS
+		emitter.emit("startStop",'{"makeit":"stop"}');
+		//Maybe we should return a fallback mp3?
+		express_res.send('annotate:theplid="undefined":missing.mp3');
+		emitter.emit("gotAnError",'{"error":"LS requested a file and I do not have one."}');
+	}
 	console.log('getNextSongFileName: '+thisPlId+" : "+songIdListCnt+" : "+nextSongIdx);
     var sqlid=splitSongId(thisPlId);		//We are interested in the PlaylistTracksId part for the sql
     sqlid=sqlid[0];
-    var sql="SELECT tl.location FROM PlaylistTracks AS plt LEFT JOIN library AS lib ON lib.id=plt.track_id LEFT JOIN track_locations AS tl ON lib.location=tl.id WHERE plt.id=?";
+    var sql="SELECT filename,directory FROM Playlist_Tracks AS plt LEFT JOIN Library AS l ON l.id=plt.track_id WHERE plt.id=?";
     db.get(sql,sqlid,function (err,row) {
-    	var filename=row.location.replace("D:/RealMusic/","/mnt/remotemusic/");
+    	var filename=row.directory.replace("D:/music/RealMusic/","/mnt/remotemusic/")+'/'+row.filename;
     	express_res.send('annotate:theplid="'+thisPlId+'":'+filename);
     	console.log('annotate:theplid="'+thisPlId+'":'+filename);
     });
@@ -702,4 +749,5 @@ Audiobox_Model.prototype.createCrate = createCrate;
 Audiobox_Model.prototype.getCrateForReview = getCrateForReview;
 Audiobox_Model.prototype.getCratesListReview = getCratesListReview;
 Audiobox_Model.prototype.removeFromList = removeFromList;
+Audiobox_Model.prototype.meNext = meNext;
 

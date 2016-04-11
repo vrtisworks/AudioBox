@@ -25,12 +25,12 @@ function gotAnError(msg) {
 //Start/stop the player
 function startStop() {
 	//Get the current setting (can tell from the class)
-	var makeit='start';				//Assume it's paused/stopped and we need to start it up
 	if (document.getElementById("audioboxplaybutton").className.indexOf('fa-pause')>=0) {
-		makeit='stop';
+		MyBox.Socket.emit("startStop",'{"makeit" : "stop"}');		
+	} else if (MyBox.Playlist.length>0) {
+		//Only request the start if we have something in the playlist
+		MyBox.Socket.emit("startStop",'{"makeit" : "start"}');		
 	}
-	//We don't need to change the icon - we either get a songStarted, or a songStopped
-	MyBox.Socket.emit("startStop",'{"makeit" : "'+makeit+'"}');
 	return false;
 }
 
@@ -91,15 +91,10 @@ function cancelRatingChange() {
 function cancelCrateChange() {
 	var crates=document.getElementById("audioboxcratepopup");
 	crates.className="hide";
-	//Refresh the selections, just in case they changed them.
-	MyBox.Socket.emit("getSongCrates",'{"track_id":"'+document.getElementById("audioboxcrates").options[0].value+'"}');
 	return false;
 }
-//When they hit the save button on the crates list.
+//When they make a change to the crates list.
 function saveCrateChange() {
-	var crates=document.getElementById("audioboxcratepopup");
-	//Hide the select containing div
-	crates.className="hide";
 	//Then get the selected crate IDs
 	var optionslist = document.getElementById("audioboxcrates").options;
 	//The [0] option has the track id (since it is 'none')
@@ -121,6 +116,7 @@ function saveCrateChange() {
 		}
 	}
 	MyBox.Socket.emit("cratesChanged",JSON.stringify(selectedIDs));
+	document.getElementById("audioboxcrates").blur();
 	return false;
 }
 //When they change the rating for a song
@@ -169,6 +165,8 @@ function songStarted(msg) {
 			options[i].selected=false;
 		}
 	}
+	//We also need to request the crates for this song.
+	MyBox.Socket.emit("getSongCrates",'{"track_id":"'+data.track_id+'"}');
 	if (MyBox.playingTimer.rowid=="p"+data.songId) {
 		//The song hasn't changed.. just the times - we only need to set a new 'value'
 		document.getElementById("audioboxsongprogress").value=MyBox.playingTimer.max-data.duration;
@@ -257,8 +255,12 @@ function songCrates(msg) {
 	//If we only get the track id, then the 'none' option is selected (we turned the rest off above)
 	if (isSelected.length==0) {
 		options[0].selected=true;
+	} else {
+		//If we have some, then we need to make sure that 'none' is NOT selected
+		options[0].selected=false;
 	}
-	//NOTE: we do not display the list of crates when we load them.  Wait until the user wants to see them
+	//Make sure the select is hidden
+	document.getElementById("audioboxcratepopup").className="hide";
 	return false;
 }
 
@@ -269,7 +271,8 @@ function gotCratesList(msg) {
 	crates=JSON.parse(msg);
 	//NOTE: It is possible that we will get a new set of crates while a song is currently playing.
 	//      So need to preserve the current selections.
-	var options=document.getElementById("audioboxcrates").options;
+	var audioboxcrates=document.getElementById("audioboxcrates");
+	var options=audioboxcrates.options;
 	var i;
 	var cl=options.length;
 	var areSelected=[];
@@ -287,7 +290,8 @@ function gotCratesList(msg) {
 		}
 		options+='value="'+crates[i][0]+'">'+crates[i][1]+'</option>';
 	}
-	document.getElementById("audioboxcrates").innerHTML=options;
+	audioboxcrates.innerHTML=options;
+	audioboxcrates.size=cl+1;
 	return false;
 }
 
@@ -329,7 +333,7 @@ function gotPlaylists(msg) {
 	document.getElementById("audioboxRightSide").innerHTML=theRows;
 	return false;
 }
-//Return from getting the list of crates we current have
+//Return from getting the list of crates we currently have
 function gotCratesListReview(msg) {
 	var crates=JSON.parse(msg);
 	var cnt=crates.length;
@@ -441,6 +445,10 @@ function gotCurrentSonglist(msg) {
 		"<div class='audioboxDivRow audioboxDropRow' data-dd=slRls id='psl0ls'><div class='audioboxSongL tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistL'>sl1ls</div><div class='audioboxInfoL'><ul class='button-bar audioboxRight'><li><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;slFls</a></li><li><a href='#' class='audioboxNowrap tooltip' title='Remove' onclick='return removeMe(slRls);'><i class='fa fa-trash'></i> </a></li><li><a href='#' class='audioboxNowrap tooltip' title='Play Next' onclick='return meNext(slRls);'><i class='fa fa-arrow-circle-up'></i></a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
 		rowid='p'+songlist[i][0];	//Use playlist id as the data-dd we will use for this row
+		songlist[i][1]=escapeHtml(songlist[i][1]);	//Artist
+		songlist[i][2]=escapeHtml(songlist[i][2]);	//Album
+		songlist[i][3]=escapeHtml(songlist[i][3]);	//Title
+		//Playlist position,title,song id, playlist id
 		MyBox.Playlist[rowid]=[songlist[i][4],songlist[i][3],songlist[i][8],songlist[i][0]];
 		if ((i%2)==0) {
 			aRow=rowTemplate;
@@ -555,7 +563,10 @@ function gotReviewList(msg) {
 		"<div class='audioboxDivRow'><div class='audioboxSongR tooltip' title='Album: sl2ls' data-dd=slRls>sl3ls</div><div class='audioboxArtistR'>sl1ls</div><div class='audioboxInfoR'><ul class='button-bar audioboxRight'><li class='first last'><a href='#' class='audioboxNowrap tooltip' title='Listen Local' onclick='return playMe(slRls);'><i class='fa fa-volume-up'></i>&nbsp;slFls</a></li></ul></div></div>";
 	for (i=0; i<cnt; i++) {
 		rowid='s'+i;	//Use the index as the data-dd we will use for this row
-		//Trackid, title, playlisttracks id,runtime
+		songlist[i][1]=escapeHtml(songlist[i][1]);	//Artist
+		songlist[i][2]=escapeHtml(songlist[i][2]);	//Album
+		songlist[i][3]=escapeHtml(songlist[i][3]);	//Title
+		//Trackid, title, runtime
 		MyBox.Searchlist[rowid]=[songlist[i][6],songlist[i][3],songlist[i][7]];
 		if ((i%2)==0) {
 			aRow=rowTemplate;
@@ -678,14 +689,24 @@ function removeMe(objidx) {
 //Make the song select the next one
 function meNext(objidx) {
 	//The easy way to do this is just tell the server and get a new list
-	alert("Need to implememnt meNext");
-	/*
-	$.ajax ({
-    	dataType: 'json',
-        type: 'GET',
-        url: MyBox.SiteURL+"ajaxMakeNext/"+MyBox.Playlist[objidx][3],
-        success: gotSonglist
-    });
-    */
+	MyBox.Socket.emit("meNext",'{"plid":"'+MyBox.Playlist[objidx][2]+'"}');
     return false;
 }
+
+//This was taken from 'mustache' to escape HTLML
+var entityMap = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;',
+    '`': '&#x60;',
+    '=': '&#x3D;'
+  };
+
+  function escapeHtml (string) {
+    return String(string).replace(/[&<>"'`=\/]/g, function fromEntityMap (s) {
+      return entityMap[s];
+    });
+  }
